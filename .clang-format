@@ -1,0 +1,152 @@
+# Tested on: clang-format version 13.0.0
+---
+Language: Cpp
+Standard: c++20
+BasedOnStyle: Google
+
+AccessModifierOffset: 0
+
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Right
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+  AlignCompound: true
+  PadOperators: true
+AlignConsecutiveBitFields:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments:
+  Kind: Never
+  OverEmptyLines: 1
+
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: true
+AlwaysBreakTemplateDeclarations: Yes
+
+BinPackArguments: true
+BinPackParameters: true
+BitFieldColonSpacing: After
+
+BreakAfterAttributes: Always
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeBraces: Allman
+BreakBeforeConceptDeclarations: Always
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: AfterColon
+BreakInheritanceList: AfterComma
+BreakStringLiterals: true
+
+ColumnLimit: 120
+CompactNamespaces: false
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: true
+
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: Always
+
+FixNamespaceComments: true
+IncludeBlocks: Preserve
+
+IndentAccessModifiers: true
+IndentCaseBlocks: false
+IndentCaseLabels: true
+IndentExternBlock: Indent
+IndentPPDirectives: AfterHash
+IndentRequiresClause: false
+IndentWidth: 4
+IndentWrappedFunctionNames: true
+
+InsertBraces: true
+InsertNewlineAtEOF: true
+
+IntegerLiteralSeparator:
+  Binary: 4
+  Decimal: 3
+  Hex: 2
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+LambdaBodyIndentation: Signature
+LineEnding: CRLF
+
+MaxEmptyLinesToKeep: 2
+
+NamespaceIndentation: Inner
+
+PPIndentWidth: -1
+PackConstructorInitializers: BinPack
+
+PenaltyBreakAssignment: 20
+PenaltyBreakBeforeFirstCallParameter: 20
+PenaltyBreakComment: 10000000
+PenaltyBreakFirstLessLess: 50
+PenaltyBreakOpenParenthesis: 200
+PenaltyBreakString: 0
+PenaltyBreakTemplateDeclaration: 0
+PenaltyExcessCharacter: 1000000
+PenaltyIndentedWhitespace: 0
+PenaltyReturnTypeOnItsOwnLine: 60
+
+PointerAlignment: Left
+
+QualifierAlignment: Leave
+
+ReferenceAlignment: Left
+ReflowComments: true
+RequiresClausePosition: OwnLine
+RequiresExpressionIndentation: OuterScope
+
+SeparateDefinitionBlocks: Always
+
+SortIncludes: CaseSensitive
+SortUsingDeclarations: Lexicographic
+
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: true
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: Never
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpacesInLineCommentPrefix:
+  Minimum: 1
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+TabWidth: 4
+
+UseTab: Never
