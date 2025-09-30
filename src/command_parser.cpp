@@ -5,6 +5,16 @@
 #include <limits>
 #include <sstream>
 
+namespace
+{
+
+int isSpace(unsigned char c)
+{
+    return std::isspace(c);
+}
+
+}  // namespace
+
 CommandParser::CommandParser(std::istream& inputStream, std::function<void()> inputStreamCleaner) :
     m_inStream{inputStream}, m_inStreamCleaner{std::move(inputStreamCleaner)}
 {
@@ -59,7 +69,7 @@ bool CommandParser::hasMoreInput()
     return c != EOF;
 }
 
-CommandParser::CommandName CommandParser::parseCommandName(const std::string& commandStr) const
+CommandParser::CommandName CommandParser::parseCommandName(const std::string_view commandStr) const
 {
     if (commandStr == "cp")
     {
@@ -85,7 +95,7 @@ CommandParser::CommandName CommandParser::parseCommandName(const std::string& co
     return CommandName::Unknown;
 }
 
-std::vector<std::string> CommandParser::parseCommandArguments(const std::string&          commandStr,
+std::vector<std::string> CommandParser::parseCommandArguments(const std::string_view      commandStr,
                                                               std::optional<std::string>& outParsingError) const
 {
     constexpr auto quotesChar = '"';
@@ -93,22 +103,30 @@ std::vector<std::string> CommandParser::parseCommandArguments(const std::string&
     auto           quotesCounter   = 0;
     auto           parsedArguments = std::vector<std::string>{};
 
-    for (quotesPos = commandStr.find_first_of(quotesChar, startPos); quotesPos != std::string::npos;
-         quotesPos = commandStr.find_first_of(quotesChar, startPos))
+    const auto findNextQuotes = [=, &startPos]()
+    {
+        return commandStr.find_first_of(quotesChar, startPos);
+    };
+
+    for (quotesPos = findNextQuotes(); quotesPos != std::string::npos; quotesPos = findNextQuotes())
     {
         if (quotesCounter % 2 == 0)
         {
-            parseCommandArgumentsByWhitespaces(parsedArguments, commandStr, startPos, quotesPos - startPos);
+            parseCommandArgumentsByWhitespaces(parsedArguments, commandStr.substr(startPos, quotesPos - startPos));
         }
         else
         {
             // The part between open " and end " is one argument
-            auto arg = commandStr.substr(startPos, quotesPos - startPos);
+            auto arg = std::string{commandStr.substr(startPos, quotesPos - startPos)};
             trim(arg);
-            if (!arg.empty())
+
+            if (arg.empty())
             {
-                parsedArguments.push_back(std::move(arg));
+                outParsingError = "Empty argument \"\" is found.";
+                return parsedArguments;
             }
+
+            parsedArguments.push_back(std::move(arg));
         }
 
         startPos = quotesPos + 1;
@@ -122,38 +140,42 @@ std::vector<std::string> CommandParser::parseCommandArguments(const std::string&
     }
 
     // Parse the rest of the string
-    parseCommandArgumentsByWhitespaces(parsedArguments, commandStr, startPos, commandStr.length() - startPos);
+    parseCommandArgumentsByWhitespaces(parsedArguments, commandStr.substr(startPos, commandStr.length() - startPos));
     return parsedArguments;
 }
 
 void CommandParser::parseCommandArgumentsByWhitespaces(std::vector<std::string>& parsedArguments,
-                                                       const std::string& commandStr, std::size_t start,
-                                                       std::size_t length) const
+                                                       const std::string_view    commandStr) const
 {
-    if (length == 0)
+    if (commandStr.empty())
     {
         return;
     }
 
-    const auto cmdPart = commandStr.substr(start, length);
-    auto       iss     = std::istringstream{cmdPart};
+    auto startPos = std::size_t{0}, endPos = std::size_t{0};
 
-    auto arg = std::string{};
-    while (iss >> arg)
+    const auto findNextWord = [=, &startPos]()
     {
-        parsedArguments.push_back(std::move(arg));
+        return std::find_if_not(commandStr.begin() + startPos, commandStr.end(), isSpace) - commandStr.begin();
+    };
+
+    for (startPos = findNextWord(); startPos < commandStr.size(); startPos = findNextWord())
+    {
+        endPos = std::find_if(commandStr.begin() + startPos, commandStr.end(), isSpace) - commandStr.begin();
+
+        if (startPos - endPos > 0)
+        {
+            parsedArguments.emplace_back(commandStr.substr(startPos, endPos - startPos));
+        }
+
+        startPos = endPos;
     }
 }
 
 void CommandParser::trim(std::string& str) const
 {
-    const auto isSpace = [](unsigned char c)
-    {
-        return std::isspace(c);
-    };
-
-    auto first = std::find_if_not(str.begin(), str.end(), isSpace);
-    auto last  = std::find_if_not(str.rbegin(), str.rend(), isSpace).base();
+    const auto first = std::find_if_not(str.begin(), str.end(), isSpace);
+    const auto last  = std::find_if_not(str.rbegin(), str.rend(), isSpace).base();
 
     if (first < last)
     {

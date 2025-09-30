@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /**
@@ -81,7 +82,7 @@ class CommandParser final
          * \param commandStr The raw command string (e.g., "cp", "md").
          * \return The corresponding CommandName enum value, or Unknown if invalid.
          */
-        CommandName              parseCommandName(const std::string& commandStr) const;
+        CommandName              parseCommandName(std::string_view commandStr) const;
         /**
          * \brief Parses arguments from a command string.
          *
@@ -91,7 +92,7 @@ class CommandParser final
          * \param outParsingError Output parameter for error messages, if any.
          * \return A vector of parsed arguments.
          */
-        std::vector<std::string> parseCommandArguments(const std::string&          commandStr,
+        std::vector<std::string> parseCommandArguments(std::string_view            commandStr,
                                                        std::optional<std::string>& outParsingError) const;
         /**
          * \brief Helper: splits arguments by whitespace.
@@ -102,8 +103,7 @@ class CommandParser final
          * \param length Length of the substring to parse.
          */
         void                     parseCommandArgumentsByWhitespaces(std::vector<std::string>& parsedArguments,
-                                                                    const std::string& commandStr, std::size_t start,
-                                                                    std::size_t length) const;
+                                                                    std::string_view          commandStr) const;
         /**
          * \brief Helper: trims leading and trailing whitespaces from a string.
          */
