@@ -1,31 +1,15 @@
 #include <iostream>
+#include <memory>
 
-#include "command_parser.h"
+#include "file_manager_emulator.h"
+#include "logger.h"
 
 int main(int, char**)
 {
     std::cout << "Hello, from file_manager_emulator!\n";
 
-    auto Parser = CommandParser(std::cin);
-    while (Parser.hasMoreInput())
-    {
-        const auto command = Parser.getNextCommand();
-        std::cout << "arguments: ";
-        for (const auto& arg : command.arguments)
-        {
-            std::cout << "[" << arg << "] ";
-        }
-        std::cout << std::endl;
-
-        if (command.error.has_value())
-        {
-            std::cout << "error: " << command.error.value();
-        }
-
-        std::cout << "\n" << std::endl;
-    }
-
-    std::cout << "No more input. Finish..." << std::endl;
-
-    return 0;
+    auto       fme        = FileManagerEmulator{std::make_unique<Logger>()};
+    const auto returnCode = fme.run("/home/yevhenii/projects/file_manager_emulator/test_file.txt");
+    // const auto returnCode = fme.run();
+    return static_cast<int>(returnCode);
 }

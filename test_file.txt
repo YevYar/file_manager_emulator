@@ -1,0 +1,10 @@
+mv dir1 "           d      
+mv dir dir2
+mv "    dir   1  " dirw
+    cp     dir1  "     dir   2    "             dir3  "dir4"        
+my
+mt "dir1"
+      mb dir1            
+                md  "    dir   1        " dir2   dir3   "dir4     " "    dir5"    dir6 dir7       
+      cp dir1   "      dir 2   "                      
+cp "" ""
