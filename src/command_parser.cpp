@@ -50,20 +50,25 @@ Command CommandParser::getNextCommand()
     // Read command name
     m_inStream >> std::ws >> cmdPartStr;
 
-    const auto cmdName = parseCommandName(cmdPartStr);
+    auto       commandString = cmdPartStr;
+    const auto cmdName       = parseCommandName(cmdPartStr);
     if (cmdName == CommandName::Unknown)
     {
         const auto errorStr = std::string{"Unknown command is met: "} + cmdPartStr;
         m_inStream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');  // Skip the rest of the command
 
-        return Command{.name = CommandName::Unknown, .arguments = {}, .error = errorStr};
+        return Command{.commandString = "", .name = CommandName::Unknown, .arguments = {}, .error = errorStr};
     }
 
     // Read command arguments
     std::getline(m_inStream, cmdPartStr);
-    auto argumentsParsingError = std::optional<std::string>{};
+    commandString              += cmdPartStr;
+    auto argumentsParsingError  = std::optional<std::string>{};
 
-    return Command{cmdName, parseCommandArguments(cmdPartStr, argumentsParsingError), argumentsParsingError};
+    return Command{.commandString = commandString,
+                   .name          = cmdName,
+                   .arguments     = parseCommandArguments(cmdPartStr, argumentsParsingError),
+                   .error         = argumentsParsingError};
 }
 
 bool CommandParser::hasMoreInput()
@@ -125,7 +130,7 @@ std::vector<std::string> CommandParser::parseCommandArguments(const std::string_
 
     if (quotesCounter % 2 != 0)
     {
-        outParsingError = "Closing quotes \" is not found.";
+        outParsingError = "Closing quotes \" symbol is not found.";
         return parsedArguments;
     }
 

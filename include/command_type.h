@@ -26,6 +26,7 @@ enum class CommandName
  */
 struct Command final
 {
+        std::string                commandString;
         CommandName                name = CommandName::Unknown;
         std::vector<std::string>   arguments;
         std::optional<std::string> error;
