@@ -3,10 +3,17 @@
 #include <algorithm>
 #include <istream>
 #include <limits>
-#include <sstream>
+#include <map>
 
 namespace
 {
+const std::map<std::string, CommandName> commandsMap = {
+  {"cp", CommandName::Cp},
+  {"md", CommandName::Md},
+  {"mf", CommandName::Mf},
+  {"mv", CommandName::Mv},
+  {"rm", CommandName::Rm}
+};
 
 int isSpace(unsigned char c)
 {
@@ -15,20 +22,23 @@ int isSpace(unsigned char c)
 
 }  // namespace
 
-CommandParser::CommandParser(std::istream& inputStream, std::function<void()> inputStreamCleaner) :
-    m_inStream{inputStream}, m_inStreamCleaner{std::move(inputStreamCleaner)}
+CommandParser::CommandParser(std::istream& inputStream) : m_inStream{inputStream}
 {
 }
 
-CommandParser::~CommandParser()
+std::string CommandParser::commandNameToString(CommandName command) const
 {
-    if (m_inStreamCleaner)
+    for (const auto& [str, cmd] : commandsMap)
     {
-        m_inStreamCleaner();
+        if (cmd == command)
+        {
+            return str;
+        }
     }
+    return "unknown";
 }
 
-CommandParser::Command CommandParser::getNextCommand()
+Command CommandParser::getNextCommand()
 {
     if (!m_inStream)
     {
@@ -69,30 +79,10 @@ bool CommandParser::hasMoreInput()
     return c != EOF;
 }
 
-CommandParser::CommandName CommandParser::parseCommandName(const std::string_view commandStr) const
+CommandName CommandParser::parseCommandName(const std::string_view commandStr) const
 {
-    if (commandStr == "cp")
-    {
-        return CommandName::Cp;
-    }
-    else if (commandStr == "md")
-    {
-        return CommandName::Md;
-    }
-    else if (commandStr == "mf")
-    {
-        return CommandName::Mf;
-    }
-    else if (commandStr == "mv")
-    {
-        return CommandName::Mv;
-    }
-    else if (commandStr == "rm")
-    {
-        return CommandName::Rm;
-    }
-
-    return CommandName::Unknown;
+    const auto cmd = std::string{commandStr};
+    return commandsMap.contains(cmd) ? commandsMap.at(cmd) : CommandName::Unknown;
 }
 
 std::vector<std::string> CommandParser::parseCommandArguments(const std::string_view      commandStr,

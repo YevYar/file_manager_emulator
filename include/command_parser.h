@@ -1,11 +1,9 @@
 #ifndef COMMAND_PARSER_H
 #define COMMAND_PARSER_H
 
-#include <functional>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <vector>
+
+#include "command_type.h"
 
 /**
  * \brief A parser for user-input commands from an input stream.
@@ -23,28 +21,6 @@ class CommandParser final
 {
     public:
         /**
-         * \brief Enumeration of valid commands recognized by the CommandParser.
-         */
-        enum class CommandName
-        {
-            Cp, Md, Mf, Mv, Rm, Unknown
-        };
-
-        /**
-         * \brief Parsed command structure.
-         *
-         * Represents a fully parsed command line, containing the command name,
-         * its arguments, and optionally an error string if parsing failed.
-         */
-        struct Command final
-        {
-            CommandName                name = CommandName::Unknown;
-            std::vector<std::string>   arguments;
-            std::optional<std::string> error;
-        };
-
-    public:
-        /**
          * \brief Constructs a CommandParser.
          *
          * \param inputStream The input stream to read commands from (for example, std::cin or std::ifstream).
@@ -52,15 +28,12 @@ class CommandParser final
          * \param inputStreamCleaner Optional callback executed on destruction
          *        to clean up or reset the input stream (for example, close the std::ifstream).
          */
-        explicit CommandParser(std::istream& inputStream, std::function<void()> inputStreamCleaner = {});
-        CommandParser(const CommandParser&) = delete;
-        CommandParser(CommandParser&&)      = delete;
+        explicit CommandParser(std::istream& inputStream);
 
-        ~CommandParser();
-
-        CommandParser& operator=(const CommandParser&) = delete;
-        CommandParser& operator=(CommandParser&&)      = delete;
-
+        /**
+         * \brief Returns the string representation of the CommandName.
+         */
+        std::string commandNameToString(CommandName command) const;
         /**
          * \brief Reads and parses the next command from the input stream.
          *
@@ -99,8 +72,6 @@ class CommandParser final
          *
          * \param parsedArguments Vector to append parsed arguments into.
          * \param commandStr The part of the command string, which contains arguments.
-         * \param start Start index of the substring to parse.
-         * \param length Length of the substring to parse.
          */
         void                     parseCommandArgumentsByWhitespaces(std::vector<std::string>& parsedArguments,
                                                                     std::string_view          commandStr) const;
@@ -110,8 +81,8 @@ class CommandParser final
         void                     trim(std::string& str) const;
 
     private:
-        std::istream&         m_inStream;
-        std::function<void()> m_inStreamCleaner;
+        std::istream& m_inStream;
+
 };
 
 #endif  // COMMAND_PARSER_H
