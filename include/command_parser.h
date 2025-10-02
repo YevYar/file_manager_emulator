@@ -75,10 +75,6 @@ class CommandParser final
          */
         void                     parseCommandArgumentsByWhitespaces(std::vector<std::string>& parsedArguments,
                                                                     std::string_view          commandStr) const;
-        /**
-         * \brief Helper: trims leading and trailing whitespaces from a string.
-         */
-        void                     trim(std::string& str) const;
 
     private:
         std::istream& m_inStream;
