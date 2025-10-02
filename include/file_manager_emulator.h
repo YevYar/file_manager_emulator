@@ -58,8 +58,8 @@ class FileManagerEmulator final
 
         bool cp(std::string_view source, std::string_view destination);
         // bool exec(const std::string& path);
-        bool md(std::string_view path);
-        bool mf(std::string_view pathWithFileName);
+        bool md(std::string_view dirAbsolutePath);
+        bool mf(std::string_view fileAbsolutePath);
         bool mv(std::string_view source, std::string_view destination);
         bool rm(std::string_view path);
 
@@ -69,6 +69,8 @@ class FileManagerEmulator final
         bool     initCommandParser(std::string_view batchFilePath);
         FsNode*  getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
         PathInfo getNodePathInfo(std::string_view nodeAbsolutePath) const;
+        FsNode*  validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
+                                      bool ignoreIfAlreadyExist);
         bool     validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
 
     private:

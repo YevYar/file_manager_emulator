@@ -102,14 +102,38 @@ bool FileManagerEmulator::cp(std::string_view source, std::string_view destinati
     return false;
 }
 
-bool FileManagerEmulator::md(std::string_view path)
+bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
 {
-    return false;
+    const auto nodePathInfo = getNodePathInfo(dirAbsolutePath);
+    auto       parent       = validateNodeCreation(NodeType::Directory, nodePathInfo, dirAbsolutePath, false);
+
+    if (parent)
+    {
+        auto newDir = std::unique_ptr<FsNode>{
+          new FsNode{.name = nodePathInfo.basename, .isDirectory = true, .children = {}}
+        };
+        parent->children.insert({nodePathInfo.basename, std::move(newDir)});
+        m_logger->logInfo(std::format("Directory {} is created.", dirAbsolutePath));
+    }
+
+    return parent;
 }
 
-bool FileManagerEmulator::mf(std::string_view pathWithFileName)
+bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
 {
-    return false;
+    const auto nodePathInfo = getNodePathInfo(fileAbsolutePath);
+    auto       parent       = validateNodeCreation(NodeType::File, nodePathInfo, fileAbsolutePath, true);
+
+    if (parent && !parent->children.contains(nodePathInfo.basename))
+    {
+        auto newFile = std::unique_ptr<FsNode>{
+          new FsNode{.name = nodePathInfo.basename, .isDirectory = false, .children = {}}
+        };
+        parent->children.insert({nodePathInfo.basename, std::move(newFile)});
+        m_logger->logInfo(std::format("File {} is created.", fileAbsolutePath));
+    }
+
+    return parent;
 }
 
 bool FileManagerEmulator::mv(std::string_view source, std::string_view destination)
@@ -268,6 +292,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
     if (nodeAbsolutePath.empty())
     {
         //  Empty path can be considered as the root
+        result.type = NodeType::Directory;
         return result;
     }
 
@@ -325,6 +350,48 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
     trim(result.basename);
 
     return result;
+}
+
+FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType               requiredNodeType,
+                                                                       const PathInfo&        pathInfo,
+                                                                       const std::string_view nodePath,
+                                                                       bool                   ignoreIfAlreadyExist)
+{
+    const auto [path, basename, nodeType] = pathInfo;
+
+    if (nodeType != requiredNodeType)
+    {
+        m_logger->logError(std::format("Invalid path {}: the basename {} is not a valid {} name.", nodePath, basename,
+                                       nodeTypeToString(requiredNodeType)));
+        return nullptr;
+    }
+
+    auto errorMessage = std::string{};
+    auto parent       = findNodeByPath(path, errorMessage);
+
+    if (!parent)
+    {
+        m_logger->logError(errorMessage);
+        return nullptr;
+    }
+    if (parent->children.contains(basename))
+    {
+        const auto nodeTypeStr = nodeTypeToString(requiredNodeType);
+
+        if (!ignoreIfAlreadyExist)
+        {
+            m_logger->logError(std::format("Cannot create {} {}: parent directory {} already contains {} {}.",
+                                           nodeTypeStr, nodePath, path, nodeTypeStr, basename));
+            return nullptr;
+        }
+        else
+        {
+            m_logger->logInfo(std::format("Ignore creation of the {} {} because it already exists.", nodeTypeStr,
+                                          nodePath));
+        }
+    }
+
+    return parent;
 }
 
 bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const
