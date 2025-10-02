@@ -7,10 +7,33 @@
 #include <map>
 
 #include "command_parser.h"
+#include "helpers.h"
 #include "logger.h"
 
+namespace
+{
+constexpr inline auto pathDelimiter = '/';
+constexpr inline auto fileDelimiter = '.';
+
+bool isFilename(const std::string_view filename)
+{
+    return filename.find_first_of(fileDelimiter) != std::string_view::npos;
+}
+
+std::string nodeTypeToString(FileManagerEmulator::NodeType nodeType)
+{
+    if (nodeType == FileManagerEmulator::NodeType::Invalid)
+    {
+        return "invalid";
+    }
+    return nodeType == FileManagerEmulator::NodeType::Directory ? "directory" : "file";
+}
+
+}  // namespace
+
 FileManagerEmulator::FileManagerEmulator(std::unique_ptr<Logger> logger) :
-    m_logger{logger ? std::move(logger) : std::make_unique<Logger>()}, m_fsRoot{"/", true, {}}
+    m_logger{logger ? std::move(logger) : std::make_unique<Logger>()},
+    m_fsRoot{new FsNode{.name = std::string{pathDelimiter}, .isDirectory = true, .children = {}}}
 {
 }
 
@@ -120,7 +143,78 @@ bool FileManagerEmulator::executeCommand(const Command& command /*, std::string&
 
 FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_view nodePath, std::string& outError) const
 {
-    // only / is acceptible as path separator
+    const auto findNextDelimiter = [nodePath](const std::size_t startPos)
+    {
+        return nodePath.find_first_of(pathDelimiter, startPos);
+    };
+
+    const auto formatPathErrorMsg = [nodePath](const std::string& errorMsg)
+    {
+        return std::format("Invalid path {}: {}", nodePath, errorMsg);
+    };
+
+    auto startPos = std::size_t{0}, delimiterPos = findNextDelimiter(0);
+    auto currentNode = m_fsRoot.get();
+    auto nodeName    = std::string{};
+
+    if (delimiterPos == std::string::npos)
+    {
+        nodeName = std::string{nodePath};
+        trim(nodeName);
+    }
+    else
+    {
+        for (; delimiterPos != std::string::npos; delimiterPos = findNextDelimiter(startPos))
+        {
+            nodeName = std::string{nodePath.substr(startPos, delimiterPos - startPos)};
+            trim(nodeName);
+
+            if (!nodeName.empty())
+            {
+                currentNode = getChildNode(currentNode, nodeName, outError);
+
+                if (!currentNode)
+                {
+                    outError = formatPathErrorMsg(outError);
+                    return nullptr;
+                }
+            }
+            else
+            {
+                // "//", "/   /" etc. inside of the path are considered as the current node.
+                // "dir1//dir2" and "dir1/   /dir2" are valid path.
+            }
+
+            startPos = delimiterPos + 1;
+        }
+
+        nodeName = std::string{nodePath.substr(startPos, nodePath.length() - startPos)};
+        trim(nodeName);
+
+        if (nodeName.empty() && !currentNode->isDirectory)
+        {
+            outError = std::format("{} is not a directory.", currentNode->name);
+            outError = formatPathErrorMsg(outError);
+            return nullptr;
+        }
+    }
+
+    if (nodeName.empty())
+    {
+        return currentNode;
+    }
+    else
+    {
+        auto childNode = getChildNode(currentNode, nodeName, outError);
+
+        if (!childNode)
+        {
+            outError = formatPathErrorMsg(outError);
+        }
+
+        return childNode;
+    }
+
     return nullptr;
 }
 
@@ -150,6 +244,89 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
     return m_parser != nullptr;
 }
 
+FileManagerEmulator::FsNode* FileManagerEmulator::getChildNode(const FsNode* node, const std::string& childName,
+                                                               std::string& outError) const
+{
+    if (!node->isDirectory)
+    {
+        outError = node->name + " is not a directory.";
+        return nullptr;
+    }
+    if (!node->children.contains(childName))
+    {
+        outError = node->name + " does not contain the item " + childName + ".";
+        return nullptr;
+    }
+
+    return node->children.at(childName).get();
+}
+
+FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_view nodeAbsolutePath) const
+{
+    auto result = PathInfo{};
+
+    if (nodeAbsolutePath.empty())
+    {
+        //  Empty path can be considered as the root
+        return result;
+    }
+
+    // Remove trailing slashes
+    auto trailingSlashesCounter = 0;
+
+    while (nodeAbsolutePath.size() > 1
+           && (nodeAbsolutePath.back() == pathDelimiter || isSpace(nodeAbsolutePath.back())))
+    {
+        if (nodeAbsolutePath.back() == pathDelimiter)
+        {
+            ++trailingSlashesCounter;
+        }
+
+        nodeAbsolutePath.remove_suffix(1);
+    }
+
+    auto trimmedPath = std::string{nodeAbsolutePath};
+    trim(trimmedPath);
+
+    // Find last slash
+    const auto pos = trimmedPath.find_last_of(pathDelimiter);
+
+    if (pos == std::string::npos)
+    {
+        // No slash -> everything is basename, path empty
+        result.basename = trimmedPath;
+        result.path     = "";
+    }
+    else if (pos == 0)
+    {
+        // Path is root "/"
+        result.path     = std::string{pathDelimiter};
+        result.basename = std::string{trimmedPath.substr(1)};
+    }
+    else
+    {
+        result.path     = std::string{trimmedPath.substr(0, pos)};
+        result.basename = std::string{trimmedPath.substr(pos + 1)};
+    }
+
+    if (/*result.basename.empty()
+        || */
+        (trailingSlashesCounter > 0 && nodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos))
+    {
+        // For example, /d1/f1.t/ is Invalid
+        result.type = NodeType::Invalid;
+    }
+    else
+    {
+        result.type = isFilename(result.basename) ? NodeType::File : NodeType::Directory;
+    }
+
+    trim(result.path);
+    trim(result.basename);
+
+    return result;
+}
+
 bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const
 {
     static const auto commandsArgumentNum = std::map<CommandName, std::size_t>{
@@ -165,7 +342,6 @@ bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& comman
 
     if (numPassedArgs != numArgsToAccept)
     {
-        // outError = std::format("The command {commandName} accepts {argsNumRequired} (was passed {argsNumReal})")
         m_logger->logError(std::format("Command {} accepts {} argument(-s) (the number of passed arguments is {}).",
                                        m_parser->commandNameToString(command.name), numArgsToAccept, numPassedArgs),
                            command.commandString);

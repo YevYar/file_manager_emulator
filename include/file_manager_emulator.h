@@ -29,6 +29,20 @@ class FileManagerEmulator final
             std::unordered_map<std::string, std::unique_ptr<FsNode>> children;
         };
 
+        enum class NodeType
+        {
+            Directory,
+            File,
+            Invalid
+        };
+
+        struct PathInfo
+        {
+            std::string path;
+            std::string basename;
+            NodeType    type;
+        };
+
     public:
         FileManagerEmulator(std::unique_ptr<Logger> logger);
         FileManagerEmulator(const FileManagerEmulator&) = delete;
@@ -50,15 +64,17 @@ class FileManagerEmulator final
         bool rm(std::string_view path);
 
     private:
-        bool    executeCommand(const Command& command /*, std::string& outError*/);
-        FsNode* findNodeByPath(std::string_view nodePath, std::string& outError) const;
-        bool    initCommandParser(std::string_view batchFilePath);
-        bool    validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
+        bool     executeCommand(const Command& command /*, std::string& outError*/);
+        FsNode*  findNodeByPath(std::string_view nodePath, std::string& outError) const;
+        bool     initCommandParser(std::string_view batchFilePath);
+        FsNode*  getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
+        PathInfo getNodePathInfo(std::string_view nodeAbsolutePath) const;
+        bool     validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
 
     private:
         std::unique_ptr<Logger>        m_logger;
         std::ifstream                  m_fileInStream;
-        FsNode                         m_fsRoot;
+        std::unique_ptr<FsNode>        m_fsRoot;
         std::unique_ptr<CommandParser> m_parser;
         bool                           m_shouldPrintTreeOnDestruction = true;
 };
