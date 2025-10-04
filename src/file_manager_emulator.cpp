@@ -104,7 +104,7 @@ bool FileManagerEmulator::cp(std::string_view source, std::string_view destinati
 
 bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
 {
-    const auto nodePathInfo = getNodePathInfo(dirAbsolutePath);
+    const auto nodePathInfo = getNodePathInfo(dirAbsolutePath, NodeType::Directory);
     auto       parent       = validateNodeCreation(NodeType::Directory, nodePathInfo, dirAbsolutePath, false);
 
     if (parent)
@@ -121,7 +121,7 @@ bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
 
 bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
 {
-    const auto nodePathInfo = getNodePathInfo(fileAbsolutePath);
+    const auto nodePathInfo = getNodePathInfo(fileAbsolutePath, NodeType::File);
     auto       parent       = validateNodeCreation(NodeType::File, nodePathInfo, fileAbsolutePath, true);
 
     if (parent && !parent->children.contains(nodePathInfo.basename))
@@ -285,7 +285,8 @@ FileManagerEmulator::FsNode* FileManagerEmulator::getChildNode(const FsNode* nod
     return node->children.at(childName).get();
 }
 
-FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_view nodeAbsolutePath) const
+FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_view nodeAbsolutePath,
+                                                                   const NodeType   requiredNodeType) const
 {
     auto result = PathInfo{};
 
@@ -293,6 +294,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
     {
         //  Empty path can be considered as the root
         result.type = NodeType::Directory;
+        result.path = pathDelimiter;
         return result;
     }
 
@@ -320,7 +322,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
     {
         // No slash -> everything is basename, path empty
         result.basename = trimmedPath;
-        result.path     = "";
+        result.path     = pathDelimiter;
     }
     else if (pos == 0)
     {
@@ -334,12 +336,13 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
         result.basename = std::string{trimmedPath.substr(pos + 1)};
     }
 
-    if (/*result.basename.empty()
-        || */
-        (trailingSlashesCounter > 0 && nodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos))
+    if ((trailingSlashesCounter > 0
+         && (requiredNodeType == NodeType::File || nodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos)))
     {
         // For example, /d1/f1.t/ is Invalid
-        result.type = NodeType::Invalid;
+        //              /d1/f1/ is Invalid too, if f1 is a file
+        result.basename += pathDelimiter;
+        result.type      = NodeType::Invalid;
     }
     else
     {
@@ -349,18 +352,25 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
     trim(result.path);
     trim(result.basename);
 
+    if (result.path.empty())
+    {
+        result.path = pathDelimiter;
+    }
+
     return result;
 }
 
 FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType               requiredNodeType,
                                                                        const PathInfo&        pathInfo,
                                                                        const std::string_view nodePath,
-                                                                       bool                   ignoreIfAlreadyExist)
+                                                                       bool ignoreIfAlreadyExist) const
 {
     const auto [path, basename, nodeType] = pathInfo;
 
-    if (nodeType != requiredNodeType)
+    if ((requiredNodeType == NodeType::Directory && nodeType != NodeType::Directory)
+        || (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid))
     {
+        // File can have basename without .
         m_logger->logError(std::format("Invalid path {}: the basename {} is not a valid {} name.", nodePath, basename,
                                        nodeTypeToString(requiredNodeType)));
         return nullptr;
@@ -372,6 +382,11 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType 
     if (!parent)
     {
         m_logger->logError(errorMessage);
+        return nullptr;
+    }
+    if (!parent->isDirectory)
+    {
+        m_logger->logError(std::format("Invalid path {}: {} is not a directory.", nodePath, parent->name));
         return nullptr;
     }
     if (parent->children.contains(basename))

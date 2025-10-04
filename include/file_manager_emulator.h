@@ -68,9 +68,9 @@ class FileManagerEmulator final
         FsNode*  findNodeByPath(std::string_view nodePath, std::string& outError) const;
         bool     initCommandParser(std::string_view batchFilePath);
         FsNode*  getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
-        PathInfo getNodePathInfo(std::string_view nodeAbsolutePath) const;
+        PathInfo getNodePathInfo(std::string_view nodeAbsolutePath, NodeType requiredNodeType = NodeType::Invalid) const;
         FsNode*  validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
-                                      bool ignoreIfAlreadyExist);
+                                      bool ignoreIfAlreadyExist) const;
         bool     validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
 
     private:
