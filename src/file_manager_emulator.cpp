@@ -3,6 +3,7 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 
@@ -39,11 +40,6 @@ FileManagerEmulator::FileManagerEmulator(std::unique_ptr<Logger> logger) :
 
 FileManagerEmulator::~FileManagerEmulator()
 {
-    if (m_shouldPrintTreeOnDestruction)
-    {
-        printFileTree();
-    }
-
     if (m_fileInStream.is_open())
     {
         m_fileInStream.close();
@@ -53,6 +49,39 @@ FileManagerEmulator::~FileManagerEmulator()
 void FileManagerEmulator::printFileTree() const
 {
     // m_logger.info The FileManagerEmulator is finished with/without error. Result file tree:
+    auto output = std::string{"The FME file tree:\n"};
+
+    const std::function<void(const FsNode*, const std::string&)> printNode =
+      [&](const FsNode* node, const std::string& prefix)
+    {
+        auto       nextPrefix       = prefix;
+        const auto nodeTypeShortStr = node->isDirectory ? "  [D]" : "  [F]";
+
+        if (prefix.empty())
+        {
+            output     += node->name + nodeTypeShortStr + "\n";
+            nextPrefix  = "|";
+        }
+        else
+        {
+            output     += prefix + "_" + node->name + nodeTypeShortStr + "\n";
+            nextPrefix += " |";
+        }
+
+        if (node->isDirectory)
+        {
+            for (const auto& [childName, childPtr] : node->children)
+            {
+                if (childPtr)
+                {
+                    printNode(childPtr.get(), nextPrefix);
+                }
+            }
+        }
+    };
+
+    printNode(m_fsRoot.get(), "");
+    m_logger->logInfo(output);
 }
 
 ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
@@ -62,6 +91,20 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
         return ErrorCode::CannotOpenDataStream;
     }
 
+    const auto printResultTree = [this](ErrorCode code)
+    {
+        if (code == ErrorCode::NoError)
+        {
+            m_logger->logInfo("FileManagerEmulator::run() is over without error.");
+        }
+        else
+        {
+            m_logger->logWarning("FileManagerEmulator::run() is over with error.");
+        }
+        printFileTree();
+        return code;
+    };
+
     while (m_parser->hasMoreInput())
     {
         const auto command = m_parser->getNextCommand();
@@ -69,12 +112,12 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
         if (command.name == CommandName::Unknown)
         {
             m_logger->logError(command.error.has_value() ? command.error.value() : "Uknown command is met.");
-            return ErrorCode::CommandParsingError;
+            return printResultTree(ErrorCode::CommandParsingError);
         }
         else if (command.error.has_value())
         {
             m_logger->logError(command.error.value(), command.commandString);
-            return ErrorCode::CommandParsingError;
+            return printResultTree(ErrorCode::CommandParsingError);
         }
 
         // auto currentError = std::string{};
@@ -82,19 +125,17 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
         if (!validateNumberOfCommandArguments(command /*, currentError*/))
         {
             // m_logger. error
-            return ErrorCode::CommandArgumentsError;
+            return printResultTree(ErrorCode::CommandArgumentsError);
         }
 
         if (!executeCommand(command /*, currentError*/))
         {
             // m_logger. error
-            return ErrorCode::LogicError;
+            return printResultTree(ErrorCode::LogicError);
         }
     }
 
-    printFileTree();
-    m_shouldPrintTreeOnDestruction = false;
-    return ErrorCode::NoError;
+    return printResultTree(ErrorCode::NoError);
 }
 
 bool FileManagerEmulator::cp(std::string_view source, std::string_view destination)

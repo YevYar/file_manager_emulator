@@ -78,7 +78,6 @@ class FileManagerEmulator final
         std::ifstream                  m_fileInStream;
         std::unique_ptr<FsNode>        m_fsRoot;
         std::unique_ptr<CommandParser> m_parser;
-        bool                           m_shouldPrintTreeOnDestruction = true;
 };
 
 #endif  // FILE_MANAGER_EMULATOR_H
