@@ -184,6 +184,24 @@ bool FileManagerEmulator::mv(std::string_view source, std::string_view destinati
 
 bool FileManagerEmulator::rm(std::string_view path)
 {
+    const auto nodePathInfo = getNodePathInfo(path);
+    auto       errorMessage = std::string{};
+    auto       parent       = findNodeByPath(nodePathInfo.path, errorMessage);
+
+    if (parent)
+    {
+        if (parent->children.contains(nodePathInfo.basename))
+        {
+            parent->children.erase(nodePathInfo.basename);
+            m_logger->logInfo(std::format("The {} {} is removed.", nodeTypeToString(nodePathInfo.type), path));
+            return true;
+        }
+        else
+        {
+            m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodePathInfo.type), path));
+        }
+    }
+
     return false;
 }
 
