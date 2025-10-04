@@ -179,7 +179,192 @@ bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
 
 bool FileManagerEmulator::mv(std::string_view source, std::string_view destination)
 {
-    return false;
+    const auto [pathS, basenameS, nodeTypeS] = getNodePathInfo(source);
+    const auto [pathD, basenameD, nodeTypeD] = getNodePathInfo(destination);
+    // mv d1/d2 /   - basenameD is empty, so we say that newBasenameD = basenameS
+    const auto newBasenameD                  = basenameD.empty() ? basenameS : basenameD;
+
+    if (isRootDirectory(pathS, basenameS))
+    {
+        m_logger->logError(std::string{"Cannot move the root directory."});
+        return false;
+    }
+    if (pathS == pathD && basenameS == basenameD)
+    {
+        return true;
+    }
+    if (nodeTypeS == NodeType::Invalid)
+    {
+        m_logger->logError(std::string{"Invalid basename in the source path "} + std::string{source});
+        return false;
+    }
+    if (nodeTypeD == NodeType::Invalid)
+    {
+        m_logger->logError(std::string{"Invalid basename in the destination path "} + std::string{destination});
+        return false;
+    }
+
+    auto errorMsg = std::string{};
+    auto parentS  = findNodeByPath(pathS, errorMsg);
+    if (!parentS)
+    {
+        m_logger->logError(errorMsg);
+        return false;
+    }
+    if (!parentS->children.contains(basenameS))
+    {
+        m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodeTypeS), source));
+        return false;
+    }
+
+    // auto sourceNode = parentS->children.at(basenameS).get();
+
+    auto parentD = findNodeByPath(pathD, errorMsg);
+    if (!parentD)
+    {
+        m_logger->logError(errorMsg);
+        return false;
+    }
+    if (parentS == parentD && basenameS == newBasenameD)
+    {
+        return true;
+    }
+    // if (!parentD->children.contains(newBasenameD))
+    // {
+    //     m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodeTypeD), destination));
+    //     return false;
+    // }
+
+    if (parentS->children.at(basenameS)->isDirectory)
+    {
+        if (parentD->children.contains(newBasenameD))
+        {
+            // Move with the source directory basename to the destination.
+            // Same as md, error if already exists.
+            if (basenameD == newBasenameD)
+            {
+                // For example, we have /d1. After we mv d3/d1 /  .
+                // This must move d1 from d3 into the root folder.
+                // If basenameD == newBasenameD -> the destination path is like /d1 - move d3/d1 into /d1
+                // If basenameD != newBasenameD -> the destination path is like / - move d3/d1 into /
+                // So, in case basenameD != newBasenameD we must prevent replacing of parent root with
+                // it child d1.
+                parentD = parentD->children.at(newBasenameD).get();
+            }
+            if (!parentD->isDirectory)
+            {
+                m_logger
+                  ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
+                                         "directory.",
+                                         source));
+                return false;
+            }
+            if (!parentD->children.contains(basenameS))
+            {
+                parentD->children.insert({basenameS, std::move(parentS->children.at(basenameS))});
+                parentS->children.erase(basenameS);
+                m_logger->logInfo(std::format("Directory {} is moved in {}.", source, destination));
+            }
+            else
+            {
+                m_logger->logError(std::format("Cannot move {} in {} because it already exists in {}.", source,
+                                               destination, destination));
+                return false;
+            }
+        }
+        else
+        {
+            // Move and rename.
+
+            if (!parentD->isDirectory)
+            {
+                m_logger
+                  ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
+                                         "directory.",
+                                         source));
+                return false;
+            }
+
+            parentD->children.insert({newBasenameD, std::move(parentS->children.at(basenameS))});
+            parentD->children.at(newBasenameD)->name = newBasenameD;
+            parentS->children.erase(basenameS);
+            m_logger->logInfo(std::format("Directory {} is moved to {} with name {}.", source, pathD, newBasenameD));
+        }
+    }
+    else
+    {
+        const auto destinationIsDir = [&]()  // destinationIsDir
+        {
+            if (parentD->children.contains(newBasenameD))
+            {
+                return parentD->children.at(newBasenameD)->isDirectory;
+            }
+            return false;
+        }();
+
+        if (destinationIsDir)  // TODO  nodeTypeD == NodeType::Directory
+        {
+            if (basenameD == newBasenameD)
+            {
+                // For example, we have /d1. After we mv d3/d1 /  .
+                // This must move d1 from d3 into the root folder.
+                // If basenameD == newBasenameD -> the destination path is like /d1 - move d3/d1 into /d1
+                // If basenameD != newBasenameD -> the destination path is like / - move d3/d1 into /
+                // So, in case basenameD != newBasenameD we must prevent replacing of parent root with
+                // it child d1.
+                parentD = parentD->children.at(newBasenameD).get();
+            }
+            if (!parentD->isDirectory)
+            {
+                m_logger
+                  ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
+                                         "directory.",
+                                         source));
+                return false;
+            }
+            // Move with the source file basename.
+            // Same as mf, ignore if already exists.
+            if (parentD->children.contains(basenameS))
+            {
+                m_logger->logInfo(std::format("Ignore move of {} in {} because it already exists in the destination.",
+                                              source, destination));
+            }
+            else
+            {
+                parentD->children.insert({basenameS, std::move(parentS->children.at(basenameS))});
+                parentS->children.erase(basenameS);
+                m_logger->logInfo(std::format("File {} is moved in {}.", source, destination));
+            }
+        }
+        else
+        {
+            if (!parentD->isDirectory)
+            {
+                m_logger
+                  ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
+                                         "directory.",
+                                         source));
+                return false;
+            }
+
+            // Move and rename.
+            // Same as mf, ignore if already exists.
+            if (!parentD->children.contains(newBasenameD))
+            {
+                parentD->children.insert({newBasenameD, std::move(parentS->children.at(basenameS))});
+                parentD->children.at(newBasenameD)->name = newBasenameD;
+                parentS->children.erase(basenameS);
+                m_logger->logInfo(std::format("File {} is moved in {} with name {}.", source, pathD, newBasenameD));
+            }
+            else
+            {
+                m_logger->logInfo(std::format("Ignore move of {} to {} because it already exists in the destination.",
+                                              source, destination));
+            }
+        }
+    }
+
+    return true;
 }
 
 bool FileManagerEmulator::rm(std::string_view path)
@@ -325,6 +510,11 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
     }
 
     return m_parser != nullptr;
+}
+
+bool FileManagerEmulator::isRootDirectory(std::string_view path, std::string_view basename) const
+{
+    return path == m_fsRoot->name && basename.empty();
 }
 
 FileManagerEmulator::FsNode* FileManagerEmulator::getChildNode(const FsNode* node, const std::string& childName,
