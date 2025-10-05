@@ -196,14 +196,12 @@ bool FileManagerEmulator::mv(std::string_view s, std::string_view d)
     {
         return true;
     }
-    if (nodeTypeS == NodeType::Invalid)
+    if (destination.starts_with(source) && destination.length() > source.length()
+        && destination.at(source.length()) == pathDelimiter)
     {
-        m_logger->logError(std::string{"Invalid basename in the source path "} + std::string{source});
-        return false;
-    }
-    if (nodeTypeD == NodeType::Invalid)
-    {
-        m_logger->logError(std::string{"Invalid basename in the destination path "} + std::string{destination});
+        // Checks if, for example, /d1 is a subdirectory of /d1/d2 and not a subdirectory of /d11/d2
+        m_logger->logError(std::format("The element {} cannot be moved into own subdirectory {}.", source,
+                                       destination));
         return false;
     }
 
@@ -296,35 +294,46 @@ bool FileManagerEmulator::mv(std::string_view s, std::string_view d)
     }
     else
     {
-        const auto destinationIsDir = [&]()  // destinationIsDir
+        if (source.back() == pathDelimiter)
         {
-            if (parentD->children.contains(newBasenameD))
+            // Wrong basename of the source file. Files cannot be referenced with / in the end.
+            m_logger->logError(std::format("Invalid basename {} in the source path {}", basenameS + pathDelimiter,
+                                           source));
+            return false;
+        }
+
+        const auto destinationIsDir = [&]()
+        {
+            if (parentD->isDirectory && parentD->children.contains(newBasenameD))
             {
+                // If it exists, destination is either an existing file or an existing directory
                 return parentD->children.at(newBasenameD)->isDirectory;
             }
+            // If not, it is a new filename after move.
             return false;
         }();
 
         if (destinationIsDir)  // TODO  nodeTypeD == NodeType::Directory
         {
-            if (basenameD == newBasenameD)
-            {
-                // For example, we have /d1. After we mv d3/d1 /  .
-                // This must move d1 from d3 into the root folder.
-                // If basenameD == newBasenameD -> the destination path is like /d1 - move d3/d1 into /d1
-                // If basenameD != newBasenameD -> the destination path is like / - move d3/d1 into /
-                // So, in case basenameD != newBasenameD we must prevent replacing of parent root with
-                // it child d1.
-                parentD = parentD->children.at(newBasenameD).get();
-            }
-            if (!parentD->isDirectory)
-            {
-                m_logger
-                  ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
-                                         "directory.",
-                                         source));
-                return false;
-            }
+            // if (basenameD == newBasenameD)
+            //{
+            //  For example, we have /d1. After we mv d3/d1 /  .
+            //  This must move d1 from d3 into the root folder.
+            //  If basenameD == newBasenameD -> the destination path is like /d1 - move d3/d1 into /d1
+            //  If basenameD != newBasenameD -> the destination path is like / - move d3/d1 into /
+            //  So, in case basenameD != newBasenameD we must prevent replacing of parent root with
+            //  it child d1.
+            parentD = parentD->children.at(newBasenameD).get();
+            //}
+            // if (!parentD->isDirectory)
+            // {
+            //     m_logger
+            //       ->logError(std::format("Cannot move source directory {} in destination because destination is not a "
+            //                              "directory.",
+            //                              source));
+            //     return false;
+            // }
+
             // Move with the source file basename.
             // Same as mf, ignore if already exists.
             if (parentD->children.contains(basenameS))
@@ -341,6 +350,14 @@ bool FileManagerEmulator::mv(std::string_view s, std::string_view d)
         }
         else
         {
+            if (destination.back() == pathDelimiter && !isRootDirectory(pathD, basenameD))
+            {
+                // Wrong basename of the destination file. Files cannot be referenced with / in the end.
+                m_logger->logError(std::format("Invalid basename {} in the destination path {}",
+                                               newBasenameD + pathDelimiter, destination));
+                return false;
+            }
+
             if (!parentD->isDirectory)
             {
                 m_logger
@@ -372,18 +389,17 @@ bool FileManagerEmulator::mv(std::string_view s, std::string_view d)
 
 bool FileManagerEmulator::rm(std::string_view absolutePath)
 {
-    const auto normalizedPath = normalizePath(absolutePath);
+    const auto normalizedPath             = normalizePath(absolutePath);
     const auto [path, basename, nodeType] = getNodePathInfo(normalizedPath);
-    auto       errorMessage   = std::string{};
-    auto       parent         = findNodeByPath(path, errorMessage);
+    auto errorMessage                     = std::string{};
+    auto parent                           = findNodeByPath(path, errorMessage);
 
     if (parent)
     {
         if (parent->children.contains(basename))
         {
             parent->children.erase(basename);
-            m_logger->logInfo(std::format("The {} {} is removed.", nodeTypeToString(nodeType),
-                                          normalizedPath));
+            m_logger->logInfo(std::format("The {} {} is removed.", nodeTypeToString(nodeType), normalizedPath));
             return true;
         }
         else
