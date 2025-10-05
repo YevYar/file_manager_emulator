@@ -74,6 +74,10 @@ class FileManagerEmulator final
         PathInfo    getNodePathInfo(std::string_view normalizedNodeAbsolutePath,
                                     NodeType         requiredNodeType = NodeType::Invalid) const;
         std::string normalizePath(std::string_view path) const;
+        bool        transferNode(NodeType requiredNodeType, FileManagerEmulator::FsNode* parentS,
+                                 FileManagerEmulator::FsNode* parentD, std::string_view source, std::string_view destination,
+                                 const std::string& basenameS, const std::string& basenameD, std::string_view pathD,
+                                 bool ignoreIfAlreadyExist);
         FsNode*     validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
                                          bool ignoreIfAlreadyExist) const;
         bool        validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
