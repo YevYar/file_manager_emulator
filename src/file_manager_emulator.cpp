@@ -145,8 +145,9 @@ bool FileManagerEmulator::cp(std::string_view source, std::string_view destinati
 
 bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
 {
-    const auto nodePathInfo = getNodePathInfo(dirAbsolutePath, NodeType::Directory);
-    auto       parent       = validateNodeCreation(NodeType::Directory, nodePathInfo, dirAbsolutePath, false);
+    const auto normalizedDirPath = normalizePath(dirAbsolutePath);
+    const auto nodePathInfo      = getNodePathInfo(normalizedDirPath, NodeType::Directory);
+    auto       parent            = validateNodeCreation(NodeType::Directory, nodePathInfo, normalizedDirPath, false);
 
     if (parent)
     {
@@ -154,7 +155,7 @@ bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
           new FsNode{.name = nodePathInfo.basename, .isDirectory = true, .children = {}}
         };
         parent->children.insert({nodePathInfo.basename, std::move(newDir)});
-        m_logger->logInfo(std::format("Directory {} is created.", dirAbsolutePath));
+        m_logger->logInfo(std::format("Directory {} is created.", normalizedDirPath));
     }
 
     return parent;
@@ -162,8 +163,9 @@ bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
 
 bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
 {
-    const auto nodePathInfo = getNodePathInfo(fileAbsolutePath, NodeType::File);
-    auto       parent       = validateNodeCreation(NodeType::File, nodePathInfo, fileAbsolutePath, true);
+    const auto normalizedFilePath = normalizePath(fileAbsolutePath);
+    const auto nodePathInfo       = getNodePathInfo(normalizedFilePath, NodeType::File);
+    auto       parent             = validateNodeCreation(NodeType::File, nodePathInfo, normalizedFilePath, true);
 
     if (parent && !parent->children.contains(nodePathInfo.basename))
     {
@@ -171,14 +173,15 @@ bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
           new FsNode{.name = nodePathInfo.basename, .isDirectory = false, .children = {}}
         };
         parent->children.insert({nodePathInfo.basename, std::move(newFile)});
-        m_logger->logInfo(std::format("File {} is created.", fileAbsolutePath));
+        m_logger->logInfo(std::format("File {} is created.", normalizedFilePath));
     }
 
     return parent;
 }
 
-bool FileManagerEmulator::mv(std::string_view source, std::string_view destination)
+bool FileManagerEmulator::mv(std::string_view s, std::string_view d)
 {
+    const auto source = normalizePath(s), destination = normalizePath(d);
     const auto [pathS, basenameS, nodeTypeS] = getNodePathInfo(source);
     const auto [pathD, basenameD, nodeTypeD] = getNodePathInfo(destination);
     // mv d1/d2 /   - basenameD is empty, so we say that newBasenameD = basenameS
@@ -367,23 +370,25 @@ bool FileManagerEmulator::mv(std::string_view source, std::string_view destinati
     return true;
 }
 
-bool FileManagerEmulator::rm(std::string_view path)
+bool FileManagerEmulator::rm(std::string_view absolutePath)
 {
-    const auto nodePathInfo = getNodePathInfo(path);
-    auto       errorMessage = std::string{};
-    auto       parent       = findNodeByPath(nodePathInfo.path, errorMessage);
+    const auto normalizedPath = normalizePath(absolutePath);
+    const auto [path, basename, nodeType] = getNodePathInfo(normalizedPath);
+    auto       errorMessage   = std::string{};
+    auto       parent         = findNodeByPath(path, errorMessage);
 
     if (parent)
     {
-        if (parent->children.contains(nodePathInfo.basename))
+        if (parent->children.contains(basename))
         {
-            parent->children.erase(nodePathInfo.basename);
-            m_logger->logInfo(std::format("The {} {} is removed.", nodeTypeToString(nodePathInfo.type), path));
+            parent->children.erase(basename);
+            m_logger->logInfo(std::format("The {} {} is removed.", nodeTypeToString(nodeType),
+                                          normalizedPath));
             return true;
         }
         else
         {
-            m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodePathInfo.type), path));
+            m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodeType), normalizedPath));
         }
     }
 
@@ -409,16 +414,16 @@ bool FileManagerEmulator::executeCommand(const Command& command /*, std::string&
     }
 }
 
-FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_view nodePath, std::string& outError) const
+FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_view normalizedNodePath,
+                                                                 std::string&     outError) const
 {
-    const auto findNextDelimiter = [nodePath](const std::size_t startPos)
+    const auto findNextDelimiter = [normalizedNodePath](const std::size_t startPos)
     {
-        return nodePath.find_first_of(pathDelimiter, startPos);
+        return normalizedNodePath.find_first_of(pathDelimiter, startPos);
     };
-
-    const auto formatPathErrorMsg = [nodePath](const std::string& errorMsg)
+    const auto formatPathErrorMsg = [normalizedNodePath](const std::string& errorMsg)
     {
-        return std::format("Invalid path {}: {}", nodePath, errorMsg);
+        return std::format("Invalid path {}: {}", normalizedNodePath, errorMsg);
     };
 
     auto startPos = std::size_t{0}, delimiterPos = findNextDelimiter(0);
@@ -427,15 +432,13 @@ FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_vie
 
     if (delimiterPos == std::string::npos)
     {
-        nodeName = std::string{nodePath};
-        trim(nodeName);
+        nodeName = normalizedNodePath;
     }
     else
     {
         for (; delimiterPos != std::string::npos; delimiterPos = findNextDelimiter(startPos))
         {
-            nodeName = std::string{nodePath.substr(startPos, delimiterPos - startPos)};
-            trim(nodeName);
+            nodeName = normalizedNodePath.substr(startPos, delimiterPos - startPos);
 
             if (!nodeName.empty())
             {
@@ -447,17 +450,11 @@ FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_vie
                     return nullptr;
                 }
             }
-            else
-            {
-                // "//", "/   /" etc. inside of the path are considered as the current node.
-                // "dir1//dir2" and "dir1/   /dir2" are valid path.
-            }
 
             startPos = delimiterPos + 1;
         }
 
-        nodeName = std::string{nodePath.substr(startPos, nodePath.length() - startPos)};
-        trim(nodeName);
+        nodeName = normalizedNodePath.substr(startPos, normalizedNodePath.length() - startPos);
 
         if (nodeName.empty() && !currentNode->isDirectory)
         {
@@ -534,76 +531,124 @@ FileManagerEmulator::FsNode* FileManagerEmulator::getChildNode(const FsNode* nod
     return node->children.at(childName).get();
 }
 
-FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_view nodeAbsolutePath,
+FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_view normalizedNodeAbsolutePath,
                                                                    const NodeType   requiredNodeType) const
 {
     auto result = PathInfo{};
 
-    if (nodeAbsolutePath.empty())
+    if (normalizedNodeAbsolutePath.empty())
     {
-        //  Empty path can be considered as the root
+        //  Empty path is considered as the root
         result.type = NodeType::Directory;
         result.path = pathDelimiter;
         return result;
     }
 
-    // Remove trailing slashes
-    auto trailingSlashesCounter = 0;
-
-    while (nodeAbsolutePath.size() > 1
-           && (nodeAbsolutePath.back() == pathDelimiter || isSpace(nodeAbsolutePath.back())))
+    const auto pathHasTrailingSlash = normalizedNodeAbsolutePath.back() == pathDelimiter;
+    if (pathHasTrailingSlash)
     {
-        if (nodeAbsolutePath.back() == pathDelimiter)
-        {
-            ++trailingSlashesCounter;
-        }
-
-        nodeAbsolutePath.remove_suffix(1);
+        normalizedNodeAbsolutePath.remove_suffix(1);
     }
 
-    auto trimmedPath = std::string{nodeAbsolutePath};
-    trim(trimmedPath);
-
     // Find last slash
-    const auto pos = trimmedPath.find_last_of(pathDelimiter);
+    const auto pos = normalizedNodeAbsolutePath.find_last_of(pathDelimiter);
 
     if (pos == std::string::npos)
     {
         // No slash -> everything is basename, path empty
-        result.basename = trimmedPath;
         result.path     = pathDelimiter;
+        result.basename = normalizedNodeAbsolutePath;
     }
     else if (pos == 0)
     {
         // Path is root "/"
-        result.path     = std::string{pathDelimiter};
-        result.basename = std::string{trimmedPath.substr(1)};
+        result.path     = pathDelimiter;
+        result.basename = normalizedNodeAbsolutePath.substr(1);
     }
     else
     {
-        result.path     = std::string{trimmedPath.substr(0, pos)};
-        result.basename = std::string{trimmedPath.substr(pos + 1)};
+        result.path     = normalizedNodeAbsolutePath.substr(0, pos);
+        result.basename = normalizedNodeAbsolutePath.substr(pos + 1);
     }
 
-    if ((trailingSlashesCounter > 0
-         && (requiredNodeType == NodeType::File || nodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos)))
+    if (pathHasTrailingSlash
+        && (requiredNodeType
+            == NodeType::File /*|| normalizedNodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos*/))
     {
-        // For example, /d1/f1.t/ is Invalid
+        // For example, /d1/f1.t/ is Invalid, if f1 is a file
         //              /d1/f1/ is Invalid too, if f1 is a file
         result.basename += pathDelimiter;
         result.type      = NodeType::Invalid;
     }
     else
     {
+        // This is a "rough" guess about the file type based on the presence of '.',
+        // since dirs can also have '.' in their names.
         result.type = isFilename(result.basename) ? NodeType::File : NodeType::Directory;
     }
-
-    trim(result.path);
-    trim(result.basename);
 
     if (result.path.empty())
     {
         result.path = pathDelimiter;
+    }
+
+    return result;
+}
+
+std::string FileManagerEmulator::normalizePath(std::string_view nodePath) const
+{
+    // "//", "/   /" etc. inside of the path are considered as the current node.
+    // "dir1//dir2" and "dir1/   /dir2" are valid path.
+
+    if (nodePath.empty())
+    {
+        return std::string{pathDelimiter};
+    }
+
+    auto result = std::string{};
+    result.reserve(nodePath.size() + 1);
+
+    const auto findNextDelimiter = [nodePath](const std::size_t startPos)
+    {
+        return nodePath.find_first_of(pathDelimiter, startPos);
+    };
+
+    auto startPos = std::size_t{0}, delimiterPos = findNextDelimiter(0);
+    auto nodeName = std::string{};
+
+    if (delimiterPos == std::string::npos)
+    {
+        result = std::string{nodePath};
+        trim(result);
+        result = pathDelimiter + result;
+    }
+    else
+    {
+        for (; delimiterPos != std::string::npos; delimiterPos = findNextDelimiter(startPos))
+        {
+            nodeName = std::string{nodePath.substr(startPos, delimiterPos - startPos)};
+            trim(nodeName);
+
+            if (!nodeName.empty())
+            {
+                result.append(pathDelimiter + nodeName);
+            }
+
+            startPos = delimiterPos + 1;
+        }
+
+        nodeName = std::string{nodePath.substr(startPos, nodePath.length() - startPos)};
+        trim(nodeName);
+
+        if (nodeName.empty())
+        {
+            // If entered path contains trailing /, we want to keep it
+            result.push_back(pathDelimiter);
+        }
+        else
+        {
+            result.append(pathDelimiter + nodeName);
+        }
     }
 
     return result;
@@ -616,10 +661,13 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType 
 {
     const auto [path, basename, nodeType] = pathInfo;
 
-    if ((requiredNodeType == NodeType::Directory && nodeType != NodeType::Directory)
-        || (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid))
+    if (/*(requiredNodeType == NodeType::Directory && nodeType != NodeType::Directory)
+        || */
+        (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid))
     {
-        // File can have basename without .
+        // File can have basename without '.'
+        // Directory can have basename with '.'
+        // Wrong is file "f.txt/" or "f/"
         m_logger->logError(std::format("Invalid path {}: the basename {} is not a valid {} name.", nodePath, basename,
                                        nodeTypeToString(requiredNodeType)));
         return nullptr;

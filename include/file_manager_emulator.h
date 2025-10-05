@@ -64,15 +64,19 @@ class FileManagerEmulator final
         bool rm(std::string_view path);
 
     private:
-        bool     executeCommand(const Command& command /*, std::string& outError*/);
-        FsNode*  findNodeByPath(std::string_view nodePath, std::string& outError) const;
-        bool     initCommandParser(std::string_view batchFilePath);
-        bool     isRootDirectory(std::string_view path, std::string_view basename) const;
-        FsNode*  getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
-        PathInfo getNodePathInfo(std::string_view nodeAbsolutePath, NodeType requiredNodeType = NodeType::Invalid) const;
-        FsNode*  validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
-                                      bool ignoreIfAlreadyExist) const;
-        bool     validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
+        bool        executeCommand(const Command& command /*, std::string& outError*/);
+        // path should be normalized
+        FsNode*     findNodeByPath(std::string_view normalizedNodePath, std::string& outError) const;
+        bool        initCommandParser(std::string_view batchFilePath);
+        bool        isRootDirectory(std::string_view path, std::string_view basename) const;
+        FsNode*     getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
+        // path should be normalized
+        PathInfo    getNodePathInfo(std::string_view normalizedNodeAbsolutePath,
+                                    NodeType         requiredNodeType = NodeType::Invalid) const;
+        std::string normalizePath(std::string_view path) const;
+        FsNode*     validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
+                                         bool ignoreIfAlreadyExist) const;
+        bool        validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
 
     private:
         std::unique_ptr<Logger>        m_logger;
