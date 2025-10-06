@@ -24,9 +24,17 @@ class FileManagerEmulator final
     public:
         struct FsNode final
         {
+            std::unique_ptr<FsNode> copy(std::string_view newName = "") const;
+            
             std::string                                              name;
             bool                                                     isDirectory = true;
             std::unordered_map<std::string, std::unique_ptr<FsNode>> children;
+        };
+
+        enum class NodeTransferMode
+        {
+            Copy,
+            Move
         };
 
         enum class NodeType
@@ -77,10 +85,11 @@ class FileManagerEmulator final
         bool        transferNode(NodeType requiredNodeType, FileManagerEmulator::FsNode* parentS,
                                  FileManagerEmulator::FsNode* parentD, std::string_view source, std::string_view destination,
                                  const std::string& basenameS, const std::string& basenameD, std::string_view pathD,
-                                 bool ignoreIfAlreadyExist);
+                                 bool ignoreIfAlreadyExist, NodeTransferMode transferMode);
         FsNode*     validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
                                          bool ignoreIfAlreadyExist) const;
-        bool        validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
+        bool validateNodeTransfer(std::string_view source, std::string_view destination, NodeTransferMode transferMode);
+        bool validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
 
     private:
         std::unique_ptr<Logger>        m_logger;
