@@ -68,14 +68,27 @@ void FileManagerEmulator::printFileTree() const
             nextPrefix += " |";
         }
 
+        auto sortedChildrenKeys = std::vector<std::string>{};
+        sortedChildrenKeys.reserve(node->children.size());
+        for (const auto& [childName, childPtr] : node->children)
+        {
+            if (childPtr)
+            {
+                sortedChildrenKeys.push_back(childName);
+            }
+        }
+
+        std::sort(sortedChildrenKeys.begin(), sortedChildrenKeys.end(),
+                  [](const auto& a, const auto& b)
+                  {
+                      return a < b;
+                  });
+
         if (node->isDirectory)
         {
-            for (const auto& [childName, childPtr] : node->children)
+            for (const auto& childName : sortedChildrenKeys)
             {
-                if (childPtr)
-                {
-                    printNode(childPtr.get(), nextPrefix);
-                }
+                printNode(node->children.at(childName).get(), nextPrefix);
             }
         }
     };
@@ -510,14 +523,17 @@ bool FileManagerEmulator::transferNode(NodeType requiredNodeType, FileManagerEmu
     {
         if (ignoreIfAlreadyExist)
         {
-            m_logger->logInfo(std::format("Ignore move of {} {} in {} because it already exists in the {}.",
-                                          nodeTypeStr, source, destinationPath, destinationPath));
+            m_logger
+              ->logInfo(std::format("Ignore move of {} {} in {} because the item with such a name already exists in "
+                                    "the {}.",
+                                    nodeTypeStr, source, destinationPath, destinationPath));
             return true;
         }
         else
         {
-            m_logger->logError(std::format("Cannot move {} {} in {} because it already exists in {}.", nodeTypeStr,
-                                           source, destinationPath, destinationPath));
+            m_logger
+              ->logError(std::format("Cannot move {} {} in {} because the item with such a name already exists in {}.",
+                                     nodeTypeStr, source, destinationPath, destinationPath));
             return false;
         }
     }
@@ -562,8 +578,9 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType 
 
         if (ignoreIfAlreadyExist)
         {
-            m_logger->logInfo(std::format("Ignore creation of the {} {} because it already exists.", nodeTypeStr,
-                                          nodePath));
+            m_logger
+              ->logInfo(std::format("Ignore creation of the {} {} because the item with such a name already exists.",
+                                    nodeTypeStr, nodePath));
         }
         else
         {
