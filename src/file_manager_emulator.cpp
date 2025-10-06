@@ -14,14 +14,19 @@
 namespace
 {
 constexpr inline auto pathDelimiter = '/';
-constexpr inline auto fileDelimiter = '.';
 
-bool isFilename(const std::string_view filename)
+std::string formatPathErrorMsg(const std::string_view normalizedNodePath, const std::string_view errorMsg)
 {
-    return filename.find_first_of(fileDelimiter) != std::string_view::npos;
-}
+    return std::format("Invalid path {}: {}", normalizedNodePath, errorMsg);
+};
 
-std::string nodeTypeToString(FileManagerEmulator::NodeType nodeType)
+std::string formatInvalidFileReferenceErrorMsg(const std::string_view path, const std::string_view basename)
+{
+    // Wrong basename of the file. Files cannot be referenced with / in the end.
+    return formatPathErrorMsg(path, std::format("the basename {} is not a valid file name.", basename));
+};
+
+std::string nodeTypeToString(const FileManagerEmulator::NodeType nodeType)
 {
     if (nodeType == FileManagerEmulator::NodeType::Invalid)
     {
@@ -48,7 +53,6 @@ FileManagerEmulator::~FileManagerEmulator()
 
 void FileManagerEmulator::printFileTree() const
 {
-    // m_logger.info The FileManagerEmulator is finished with/without error. Result file tree:
     auto output = std::string{"The FME file tree:\n"};
 
     const std::function<void(const FsNode*, const std::string&)> printNode =
@@ -122,6 +126,11 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
     {
         const auto command = m_parser->getNextCommand();
 
+        if (m_fileInStream.is_open() && command.name != CommandName::Unknown)
+        {
+            m_logger->logInfo(std::format("Executing command [{}] ...", command.commandString));
+        }
+
         if (command.name == CommandName::Unknown)
         {
             m_logger->logError(command.error.has_value() ? command.error.value() : "Uknown command is met.");
@@ -133,17 +142,13 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
             return printResultTree(ErrorCode::CommandParsingError);
         }
 
-        // auto currentError = std::string{};
-
-        if (!validateNumberOfCommandArguments(command /*, currentError*/))
+        if (!validateNumberOfCommandArguments(command))
         {
-            // m_logger. error
             return printResultTree(ErrorCode::CommandArgumentsError);
         }
 
-        if (!executeCommand(command /*, currentError*/))
+        if (!executeCommand(command))
         {
-            // m_logger. error
             return printResultTree(ErrorCode::LogicError);
         }
     }
@@ -151,16 +156,16 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
     return printResultTree(ErrorCode::NoError);
 }
 
-bool FileManagerEmulator::cp(std::string_view source, std::string_view destination)
+bool FileManagerEmulator::cp(const std::string_view source, const std::string_view destination)
 {
-    return validateNodeTransfer(source, destination, NodeTransferMode::Copy);
+    return validateAndTransferNode(source, destination, NodeTransferMode::Copy);
 }
 
-bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
+bool FileManagerEmulator::md(const std::string_view dirAbsolutePath)
 {
     const auto normalizedDirPath = normalizePath(dirAbsolutePath);
     const auto nodePathInfo      = getNodePathInfo(normalizedDirPath, NodeType::Directory);
-    auto       parent            = validateNodeCreation(NodeType::Directory, nodePathInfo, normalizedDirPath, false);
+    const auto parent            = validateNodeCreation(NodeType::Directory, nodePathInfo, normalizedDirPath, false);
 
     if (parent)
     {
@@ -174,11 +179,11 @@ bool FileManagerEmulator::md(std::string_view dirAbsolutePath)
     return parent;
 }
 
-bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
+bool FileManagerEmulator::mf(const std::string_view fileAbsolutePath)
 {
     const auto normalizedFilePath = normalizePath(fileAbsolutePath);
     const auto nodePathInfo       = getNodePathInfo(normalizedFilePath, NodeType::File);
-    auto       parent             = validateNodeCreation(NodeType::File, nodePathInfo, normalizedFilePath, true);
+    const auto parent             = validateNodeCreation(NodeType::File, nodePathInfo, normalizedFilePath, true);
 
     if (parent && !parent->children.contains(nodePathInfo.basename))
     {
@@ -192,36 +197,35 @@ bool FileManagerEmulator::mf(std::string_view fileAbsolutePath)
     return parent;
 }
 
-bool FileManagerEmulator::mv(std::string_view source, std::string_view destination)
+bool FileManagerEmulator::mv(const std::string_view source, const std::string_view destination)
 {
-    return validateNodeTransfer(source, destination, NodeTransferMode::Move);
+    return validateAndTransferNode(source, destination, NodeTransferMode::Move);
 }
 
-bool FileManagerEmulator::rm(std::string_view absolutePath)
+bool FileManagerEmulator::rm(const std::string_view absolutePath)
 {
-    const auto normalizedPath             = normalizePath(absolutePath);
-    const auto [path, basename, nodeType] = getNodePathInfo(normalizedPath);
-    auto errorMessage                     = std::string{};
-    auto parent                           = findNodeByPath(path, errorMessage);
+    const auto normalizedPath = normalizePath(absolutePath);
+    const auto nodePathInfo   = getNodePathInfo(normalizedPath);
+    const auto parent         = findNodeByPath(nodePathInfo.path);
 
     if (parent)
     {
-        if (parent->children.contains(basename))
+        if (parent->children.contains(nodePathInfo.basename))
         {
-            parent->children.erase(basename);
+            parent->children.erase(nodePathInfo.basename);
             m_logger->logInfo(std::format("The item {} is removed.", normalizedPath));
             return true;
         }
         else
         {
-            m_logger->logError(std::format("No such {} {}.", nodeTypeToString(nodeType), normalizedPath));
+            m_logger->logError(std::format("No such item {}.", normalizedPath));
         }
     }
 
     return false;
 }
 
-bool FileManagerEmulator::executeCommand(const Command& command /*, std::string& outError*/)
+bool FileManagerEmulator::executeCommand(const Command& command)
 {
     switch (command.name)
     {
@@ -240,16 +244,11 @@ bool FileManagerEmulator::executeCommand(const Command& command /*, std::string&
     }
 }
 
-FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_view normalizedNodePath,
-                                                                 std::string&     outError) const
+FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(const std::string_view normalizedNodePath) const
 {
     const auto findNextDelimiter = [normalizedNodePath](const std::size_t startPos)
     {
         return normalizedNodePath.find_first_of(pathDelimiter, startPos);
-    };
-    const auto formatPathErrorMsg = [normalizedNodePath](const std::string& errorMsg)
-    {
-        return std::format("Invalid path {}: {}", normalizedNodePath, errorMsg);
     };
 
     auto startPos = std::size_t{0}, delimiterPos = findNextDelimiter(0);
@@ -268,11 +267,10 @@ FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_vie
 
             if (!nodeName.empty())
             {
-                currentNode = getChildNode(currentNode, nodeName, outError);
+                currentNode = getChildNode(currentNode, nodeName, normalizedNodePath);
 
                 if (!currentNode)
                 {
-                    outError = formatPathErrorMsg(outError);
                     return nullptr;
                 }
             }
@@ -284,29 +282,13 @@ FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(std::string_vie
 
         if (nodeName.empty() && !currentNode->isDirectory)
         {
-            outError = std::format("{} is not a directory.", currentNode->name);
-            outError = formatPathErrorMsg(outError);
+            // File path with trailing slash is an invalid file reference.
+            m_logger->logError(formatInvalidFileReferenceErrorMsg(normalizedNodePath, currentNode->name));
             return nullptr;
         }
     }
 
-    if (nodeName.empty())
-    {
-        return currentNode;
-    }
-    else
-    {
-        auto childNode = getChildNode(currentNode, nodeName, outError);
-
-        if (!childNode)
-        {
-            outError = formatPathErrorMsg(outError);
-        }
-
-        return childNode;
-    }
-
-    return nullptr;
+    return nodeName.empty() ? currentNode : getChildNode(currentNode, nodeName, normalizedNodePath);
 }
 
 bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath)
@@ -321,9 +303,8 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
         }
         else
         {
-            const auto errorMsg =
-              std::format("{}: {}. {}", batchFilePath, "Cannot open the batch file for reading", std::strerror(errno));
-            m_logger->logError(errorMsg);
+            m_logger->logError(std::format("{}: {}. {}", batchFilePath, "Cannot open the batch file for reading",
+                                           std::strerror(errno)));
             return false;
         }
     }
@@ -335,22 +316,28 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
     return m_parser != nullptr;
 }
 
-bool FileManagerEmulator::isRootDirectory(std::string_view path, std::string_view basename) const
+bool FileManagerEmulator::isRootDirectory(const std::string_view path, const std::string_view basename) const
 {
     return path == m_fsRoot->name && basename.empty();
 }
 
 FileManagerEmulator::FsNode* FileManagerEmulator::getChildNode(const FsNode* node, const std::string& childName,
-                                                               std::string& outError) const
+                                                               const std::string_view normalizedNodePath) const
 {
+    if (!node)
+    {
+        m_logger->logError(formatPathErrorMsg(normalizedNodePath, "null node is passed."));
+        return nullptr;
+    }
     if (!node->isDirectory)
     {
-        outError = node->name + " is not a directory.";
+        m_logger->logError(formatPathErrorMsg(normalizedNodePath, node->name + " is not a directory."));
         return nullptr;
     }
     if (!node->children.contains(childName))
     {
-        outError = node->name + " does not contain the item " + childName + ".";
+        m_logger->logError(formatPathErrorMsg(normalizedNodePath,
+                                              node->name + " does not contain the item " + childName + "."));
         return nullptr;
     }
 
@@ -381,7 +368,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
 
     if (pos == std::string::npos)
     {
-        // No slash -> everything is basename, path empty
+        // No slash -> everything is basename, path is root
         result.path     = pathDelimiter;
         result.basename = normalizedNodeAbsolutePath;
     }
@@ -397,9 +384,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
         result.basename = normalizedNodeAbsolutePath.substr(pos + 1);
     }
 
-    if (pathHasTrailingSlash
-        && (requiredNodeType
-            == NodeType::File /*|| normalizedNodeAbsolutePath.find_last_of(fileDelimiter) != std::string::npos*/))
+    if (pathHasTrailingSlash && requiredNodeType == NodeType::File)
     {
         // For example, /d1/f1.t/ is Invalid, if f1 is a file
         //              /d1/f1/ is Invalid too, if f1 is a file
@@ -424,7 +409,7 @@ FileManagerEmulator::PathInfo FileManagerEmulator::getNodePathInfo(std::string_v
 std::string FileManagerEmulator::normalizePath(std::string_view nodePath) const
 {
     // "//", "/   /" etc. inside of the path are considered as the current node.
-    // "dir1//dir2" and "dir1/   /dir2" are valid path.
+    // "dir1//dir2" and "dir1/   /dir2" are valid path and result is "dir1/dir2".
 
     if (nodePath.empty())
     {
@@ -444,6 +429,7 @@ std::string FileManagerEmulator::normalizePath(std::string_view nodePath) const
 
     if (delimiterPos == std::string::npos)
     {
+        // No slash -> everything is basename, path is root
         result = std::string{nodePath};
         trim(result);
         result = pathDelimiter + result;
@@ -480,14 +466,15 @@ std::string FileManagerEmulator::normalizePath(std::string_view nodePath) const
     return result;
 }
 
-bool FileManagerEmulator::transferNode(NodeType requiredNodeType, FileManagerEmulator::FsNode* parentS,
-                                       FileManagerEmulator::FsNode* parentD, const std::string_view source,
+bool FileManagerEmulator::transferNode(const NodeType requiredNodeType, FileManagerEmulator::FsNode* const parentS,
+                                       FileManagerEmulator::FsNode* const parentD, const std::string_view source,
                                        const std::string_view destination, const std::string& basenameS,
                                        const std::string& basenameD, const std::string_view pathD,
-                                       bool ignoreIfAlreadyExist, NodeTransferMode transferMode)
+                                       const bool ignoreIfAlreadyExist, const NodeTransferMode transferMode)
 {
+    // If destination is "/" (no basename), we must move in the root with the current name.
     const auto nameAfterTransfer = basenameD.empty() ? basenameS : basenameD;
-    const auto destinationPath   = basenameD.empty() ? destination : pathD;
+    const auto destinationPath   = basenameD.empty() ? destination : pathD;  // path is destination without basename
     const auto nodeTypeStr       = nodeTypeToString(requiredNodeType);
 
     if (!parentD->isDirectory)
@@ -508,7 +495,6 @@ bool FileManagerEmulator::transferNode(NodeType requiredNodeType, FileManagerEmu
             parentS->children.erase(basenameS);
             m_logger->logInfo(std::format("The {} {} is moved in {} with name {}.", nodeTypeStr, source,
                                           destinationPath, nameAfterTransfer));
-            return true;
         }
         else
         {
@@ -516,8 +502,8 @@ bool FileManagerEmulator::transferNode(NodeType requiredNodeType, FileManagerEmu
             parentD->children.insert({nameAfterTransfer, std::move(newNode)});
             m_logger->logInfo(std::format("The {} {} is copied in {} with name {}.", nodeTypeStr, source,
                                           destinationPath, nameAfterTransfer));
-            return true;
         }
+        return true;
     }
     else
     {
@@ -540,36 +526,30 @@ bool FileManagerEmulator::transferNode(NodeType requiredNodeType, FileManagerEmu
     return false;
 }
 
-FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType               requiredNodeType,
+FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(const NodeType         requiredNodeType,
                                                                        const PathInfo&        pathInfo,
                                                                        const std::string_view nodePath,
-                                                                       bool ignoreIfAlreadyExist) const
+                                                                       const bool ignoreIfAlreadyExist) const
 {
-    const auto [path, basename, nodeType] = pathInfo;
+    const auto& [path, basename, nodeType] = pathInfo;
 
-    if (/*(requiredNodeType == NodeType::Directory && nodeType != NodeType::Directory)
-        || */
-        (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid))
+    if (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid)
     {
         // File can have basename without '.'
         // Directory can have basename with '.'
         // Wrong is file "f.txt/" or "f/"
-        m_logger->logError(std::format("Invalid path {}: the basename {} is not a valid {} name.", nodePath, basename,
-                                       nodeTypeToString(requiredNodeType)));
+        m_logger->logError(formatInvalidFileReferenceErrorMsg(nodePath, basename));
         return nullptr;
     }
 
-    auto errorMessage = std::string{};
-    auto parent       = findNodeByPath(path, errorMessage);
-
+    const auto parent = findNodeByPath(path);
     if (!parent)
     {
-        m_logger->logError(errorMessage);
         return nullptr;
     }
     if (!parent->isDirectory)
     {
-        m_logger->logError(std::format("Invalid path {}: {} is not a directory.", nodePath, parent->name));
+        m_logger->logError(formatPathErrorMsg(nodePath, std::format("{} is not a directory.", parent->name)));
         return nullptr;
     }
     if (parent->children.contains(basename))
@@ -593,14 +573,15 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(NodeType 
     return parent;
 }
 
-bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_view d, NodeTransferMode transferMode)
+bool FileManagerEmulator::validateAndTransferNode(const std::string_view s, const std::string_view d,
+                                                  const NodeTransferMode transferMode)
 {
     const auto source = normalizePath(s), destination = normalizePath(d);
-    const auto [pathS, basenameS, nodeTypeS] = getNodePathInfo(source);
-    const auto [pathD, basenameD, nodeTypeD] = getNodePathInfo(destination);
+    const auto& [pathS, basenameS, nodeTypeS] = getNodePathInfo(source);
+    const auto& [pathD, basenameD, nodeTypeD] = getNodePathInfo(destination);
+    const auto destinationIsRoot              = isRootDirectory(pathD, basenameD);
     // mv d1/d2 /   - basenameD is empty, so we say that newBasenameD = basenameS
-    const auto destinationIsRoot             = isRootDirectory(pathD, basenameD);
-    const auto newBasenameD                  = destinationIsRoot ? basenameS : basenameD;
+    const auto newBasenameD                   = destinationIsRoot ? basenameS : basenameD;
 
     if (isRootDirectory(pathS, basenameS))
     {
@@ -618,17 +599,15 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
     if (destination.starts_with(source) && destination.length() > source.length()
         && destination.at(source.length()) == pathDelimiter)
     {
-        // Checks if, for example, /d1 is a subdirectory of /d1/d2 and not a subdirectory of /d11/d2
+        // Checks that, for example, /d1 is a subdirectory of /d1/d2 and not a subdirectory of /d11/d2
         m_logger->logError(std::format("The element {} cannot be moved into own subdirectory {}.", source,
                                        destination));
         return false;
     }
 
-    auto errorMsg = std::string{};
-    auto parentS  = findNodeByPath(pathS, errorMsg);
+    const auto parentS = findNodeByPath(pathS);
     if (!parentS)
     {
-        m_logger->logError(errorMsg);
         return false;
     }
     if (!parentS->children.contains(basenameS))
@@ -637,10 +616,9 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
         return false;
     }
 
-    auto parentD = findNodeByPath(pathD, errorMsg);
+    auto parentD = findNodeByPath(pathD);
     if (!parentD)
     {
-        m_logger->logError(errorMsg);
         return false;
     }
     if (parentS == parentD && basenameS == newBasenameD)
@@ -659,22 +637,10 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
     const auto sourceIsDir = parentS->children.at(basenameS)->isDirectory;
     if (!sourceIsDir)
     {
-        const auto logInvalidFileReferenceError = [this](const std::string& basename, const std::string& path)
-        {
-            // Wrong basename of the file. Files cannot be referenced with / in the end.
-            m_logger->logError(std::format("Invalid file basename {} in the path {}", basename + pathDelimiter, path));
-        };
-
         if (source.back() == pathDelimiter)
         {
             // Wrong basename of the source file.
-            logInvalidFileReferenceError(basenameS, source);
-            return false;
-        }
-        if (destination.back() == pathDelimiter && !destinationIsRoot)
-        {
-            // Wrong basename of the destination file.
-            logInvalidFileReferenceError(basenameD, destination);
+            m_logger->logError(formatInvalidFileReferenceErrorMsg(source, basenameS + pathDelimiter));
             return false;
         }
     }
@@ -682,7 +648,7 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
     const auto requiredNodeType     = sourceIsDir ? NodeType::Directory : NodeType::File;
     const auto ignoreIfAlreadyExist = sourceIsDir ? false : true;
 
-    if (parentD->children.contains(newBasenameD) && basenameD == newBasenameD)
+    if (parentD->children.contains(newBasenameD) && !destinationIsRoot)
     {
         // For example, we have d3/d1. After we mv d3/d1 /  .
         // This must move d1 from d3 into the root folder.
@@ -698,6 +664,13 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
     }
     else
     {
+        if (!sourceIsDir && destination.back() == pathDelimiter && !destinationIsRoot)
+        {
+            // Wrong basename of the destination file.
+            m_logger->logError(formatInvalidFileReferenceErrorMsg(destination, basenameD + pathDelimiter));
+            return false;
+        }
+
         // Move and rename
         return transferNode(requiredNodeType, parentS, parentD, source, destination, basenameS, newBasenameD, pathD,
                             ignoreIfAlreadyExist, transferMode);
@@ -705,8 +678,13 @@ bool FileManagerEmulator::validateNodeTransfer(std::string_view s, std::string_v
     return false;
 }
 
-bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const
+bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& command) const
 {
+    if (command.name == CommandName::Unknown)
+    {
+        return false;
+    }
+
     static const auto commandsArgumentNum = std::map<CommandName, std::size_t>{
       {CommandName::Cp, 2},
       {CommandName::Md, 1},
@@ -729,7 +707,7 @@ bool FileManagerEmulator::validateNumberOfCommandArguments(const Command& comman
     return true;
 }
 
-std::unique_ptr<FileManagerEmulator::FsNode> FileManagerEmulator::FsNode::copy(std::string_view newName) const
+std::unique_ptr<FileManagerEmulator::FsNode> FileManagerEmulator::FsNode::copy(const std::string_view newName) const
 {
     auto newNode         = std::make_unique<FsNode>();
     newNode->name        = newName.empty() ? name : newName;

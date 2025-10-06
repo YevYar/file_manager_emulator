@@ -23,7 +23,7 @@ CommandParser::CommandParser(std::istream& inputStream) : m_inStream{inputStream
 {
 }
 
-std::string CommandParser::commandNameToString(CommandName command) const
+std::string CommandParser::commandNameToString(const CommandName command) const
 {
     for (const auto& [str, cmd] : commandsMap)
     {
@@ -54,7 +54,10 @@ Command CommandParser::getNextCommand()
         const auto errorStr = std::string{"Unknown command is met: "} + cmdPartStr;
         m_inStream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');  // Skip the rest of the command
 
-        return Command{.commandString = "", .name = CommandName::Unknown, .arguments = {}, .error = errorStr};
+        return Command{.commandString = "",
+                       .name          = CommandName::Unknown,
+                       .arguments     = {},
+                       .error         = std::move(errorStr)};
     }
 
     // Read command arguments
@@ -90,6 +93,11 @@ CommandName CommandParser::parseCommandName(const std::string_view commandStr) c
 std::vector<std::string> CommandParser::parseCommandArguments(const std::string_view      commandStr,
                                                               std::optional<std::string>& outParsingError) const
 {
+    if (commandStr.empty())
+    {
+        return {};
+    }
+
     constexpr auto quotesChar = '"';
     auto           startPos = std::size_t{0}, quotesPos = std::size_t{0};
     auto           quotesCounter   = 0;

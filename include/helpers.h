@@ -2,6 +2,15 @@
 #define HELPERS_H
 
 #include <string>
+#include <string_view>
+
+/**
+ * \brief Checks whether the given string represents a file basename.
+ * 
+ * This is a "rough" guess about the file
+ * type based on the presence of '.', since dirs can also have '.' in their names.
+ */
+bool isFilename(std::string_view filename);
 
 /**
  * \brief Checks whether the provided character is a space.

@@ -25,7 +25,7 @@ class FileManagerEmulator final
         struct FsNode final
         {
             std::unique_ptr<FsNode> copy(std::string_view newName = "") const;
-            
+
             std::string                                              name;
             bool                                                     isDirectory = true;
             std::unordered_map<std::string, std::unique_ptr<FsNode>> children;
@@ -65,19 +65,19 @@ class FileManagerEmulator final
         ErrorCode run(std::string_view batchFilePath = "");
 
         bool cp(std::string_view source, std::string_view destination);
-        // bool exec(const std::string& path);
         bool md(std::string_view dirAbsolutePath);
         bool mf(std::string_view fileAbsolutePath);
         bool mv(std::string_view source, std::string_view destination);
         bool rm(std::string_view path);
 
     private:
-        bool        executeCommand(const Command& command /*, std::string& outError*/);
+        bool        executeCommand(const Command& command);
         // path should be normalized
-        FsNode*     findNodeByPath(std::string_view normalizedNodePath, std::string& outError) const;
+        FsNode*     findNodeByPath(std::string_view normalizedNodePath) const;
         bool        initCommandParser(std::string_view batchFilePath);
         bool        isRootDirectory(std::string_view path, std::string_view basename) const;
-        FsNode*     getChildNode(const FsNode* node, const std::string& childName, std::string& outError) const;
+        FsNode*     getChildNode(const FsNode* node, const std::string& childName,
+                                 std::string_view normalizedNodePath) const;
         // path should be normalized
         PathInfo    getNodePathInfo(std::string_view normalizedNodeAbsolutePath,
                                     NodeType         requiredNodeType = NodeType::Invalid) const;
@@ -88,8 +88,9 @@ class FileManagerEmulator final
                                  bool ignoreIfAlreadyExist, NodeTransferMode transferMode);
         FsNode*     validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
                                          bool ignoreIfAlreadyExist) const;
-        bool validateNodeTransfer(std::string_view source, std::string_view destination, NodeTransferMode transferMode);
-        bool validateNumberOfCommandArguments(const Command& command /*, std::string& outError*/) const;
+        bool        validateAndTransferNode(std::string_view source, std::string_view destination,
+                                            NodeTransferMode transferMode);
+        bool        validateNumberOfCommandArguments(const Command& command) const;
 
     private:
         std::unique_ptr<Logger>        m_logger;

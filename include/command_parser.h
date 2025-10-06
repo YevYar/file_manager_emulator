@@ -25,8 +25,6 @@ class CommandParser final
          *
          * \param inputStream The input stream to read commands from (for example, std::cin or std::ifstream).
          *        The parser does not take ownership of the stream.
-         * \param inputStreamCleaner Optional callback executed on destruction
-         *        to clean up or reset the input stream (for example, close the std::ifstream).
          */
         explicit CommandParser(std::istream& inputStream);
 

@@ -6,19 +6,19 @@
 namespace
 {
 std::string makeLogString(const std::string_view logType, const std::string_view commandString,
-                          std::string_view errorMessage)
+                          const std::string_view message)
 {
     auto log = std::string{};
 
     if (commandString.empty())
     {
-        log.reserve(logType.size() + errorMessage.size());
-        log.append(logType).append(errorMessage);
+        log.reserve(logType.size() + message.size());
+        log.append(logType).append(message);
     }
     else
     {
-        log.reserve(logType.size() + commandString.size() + 3 + errorMessage.size());
-        log.append(logType).append("[").append(commandString).append("] ").append(errorMessage);
+        log.reserve(logType.size() + commandString.size() + 3 + message.size());
+        log.append(logType).append("[").append(commandString).append("] ").append(message);
     }
 
     return log;

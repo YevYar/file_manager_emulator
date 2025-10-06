@@ -2,7 +2,18 @@
 
 #include <algorithm>
 
-int isSpace(unsigned char c)
+namespace
+{
+constexpr inline auto fileDelimiter = '.';
+
+}  // namespace
+
+bool isFilename(const std::string_view filename)
+{
+    return filename.find_first_of(fileDelimiter) != std::string_view::npos;
+}
+
+int isSpace(const unsigned char c)
 {
     return std::isspace(c);
 }
