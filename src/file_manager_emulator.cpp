@@ -26,6 +26,11 @@ std::string formatInvalidFileReferenceErrorMsg(const std::string_view path, cons
     return formatPathErrorMsg(path, std::format("the basename {} is not a valid file name.", basename));
 };
 
+std::string nodeTransferModeToString(const FileManagerEmulator::NodeTransferMode nodeTransferMode)
+{
+    return nodeTransferMode == FileManagerEmulator::NodeTransferMode::Copy ? "copy" : "move";
+}
+
 std::string nodeTypeToString(const FileManagerEmulator::NodeType nodeType)
 {
     if (nodeType == FileManagerEmulator::NodeType::Invalid)
@@ -318,6 +323,7 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
 
         if (m_fileInStream.is_open())
         {
+            m_logger->logInfo(std::format("The batch file {} is opened.", batchFilePath));
             m_parser = std::make_unique<CommandParser>(m_fileInStream);
         }
         else
@@ -329,6 +335,7 @@ bool FileManagerEmulator::initCommandParser(const std::string_view batchFilePath
     }
     else
     {
+        m_logger->logInfo("The batch file is not provided. Reading standard input...");
         m_parser = std::make_unique<CommandParser>(std::cin);
     }
 
@@ -499,9 +506,9 @@ bool FileManagerEmulator::transferNode(const NodeType requiredNodeType, FileMana
     if (!parentD->isDirectory)
     {
         m_logger
-          ->logError(std::format("Cannot move source {} {} in destination {} because destination is not a "
+          ->logError(std::format("Cannot {} source {} {} in destination {} because destination is not a "
                                  "directory.",
-                                 nodeTypeStr, source, destinationPath));
+                                 nodeTransferModeToString(transferMode), nodeTypeStr, source, destinationPath));
         return false;
     }
 
@@ -529,16 +536,18 @@ bool FileManagerEmulator::transferNode(const NodeType requiredNodeType, FileMana
         if (ignoreIfAlreadyExist)
         {
             m_logger
-              ->logInfo(std::format("Ignore move of {} {} in {} because the item with such a name already exists in "
+              ->logInfo(std::format("Ignore {} of {} {} in {} because the item with such a name already exists in "
                                     "the {}.",
-                                    nodeTypeStr, source, destinationPath, destinationPath));
+                                    nodeTransferModeToString(transferMode), nodeTypeStr, source, destinationPath,
+                                    destinationPath));
             return true;
         }
         else
         {
             m_logger
-              ->logError(std::format("Cannot move {} {} in {} because the item with such a name already exists in {}.",
-                                     nodeTypeStr, source, destinationPath, destinationPath));
+              ->logError(std::format("Cannot {} {} {} in {} because the item with such a name already exists in {}.",
+                                     nodeTransferModeToString(transferMode), nodeTypeStr, source, destinationPath,
+                                     destinationPath));
             return false;
         }
     }
@@ -588,8 +597,8 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(const Nod
         }
         else
         {
-            m_logger->logError(std::format("Cannot create {} {}: parent directory {} already contains {} {}.",
-                                           nodeTypeStr, nodePath, path, nodeTypeStr, basename));
+            m_logger->logError(std::format("Cannot create {} {}: parent directory {} already contains item {}.",
+                                           nodeTypeStr, nodePath, path, basename));
             return nullptr;
         }
     }
@@ -609,7 +618,12 @@ bool FileManagerEmulator::validateAndTransferNode(const std::string_view s, cons
 
     if (isRootDirectory(pathS, basenameS))
     {
-        m_logger->logError("Cannot move the root directory.");
+        m_logger->logError(std::format("Cannot {} the root directory.", nodeTransferModeToString(transferMode)));
+        return false;
+    }
+    if (basenameS.empty() || newBasenameD.empty())
+    {
+        m_logger->logError(formatPathErrorMsg(basenameS.empty() ? source : destination, "basename cannot be empty."));
         return false;
     }
     if ((pathS == pathD && basenameS == basenameD) || (pathS == std::string{pathDelimiter} && destinationIsRoot))
@@ -620,12 +634,18 @@ bool FileManagerEmulator::validateAndTransferNode(const std::string_view s, cons
         // Ignore moving item into itself.
         return true;
     }
-    if (destination.starts_with(source) && destination.length() > source.length()
-        && destination.at(source.length()) == pathDelimiter)
+
+    auto sourceWithoutSlash = std::string_view{source};
+    if (sourceWithoutSlash.back() == pathDelimiter)
+    {
+        sourceWithoutSlash.remove_suffix(1);
+    }
+    if (destination.starts_with(sourceWithoutSlash) && destination.length() > sourceWithoutSlash.length()
+        && destination.at(sourceWithoutSlash.length()) == pathDelimiter)
     {
         // Checks that, for example, /d1 is a subdirectory of /d1/d2 and not a subdirectory of /d11/d2
-        m_logger->logError(std::format("The element {} cannot be moved into own subdirectory {}.", source,
-                                       destination));
+        m_logger->logError(std::format("Cannot {} the element {} into own subdirectory {}.",
+                                       nodeTransferModeToString(transferMode), source, destination));
         return false;
     }
 
@@ -652,9 +672,9 @@ bool FileManagerEmulator::validateAndTransferNode(const std::string_view s, cons
     if (!parentD->isDirectory)
     {
         m_logger
-          ->logError(std::format("Cannot move the item {} in destination {} because destination is not a "
+          ->logError(std::format("Cannot {} the item {} in destination {} because destination is not a "
                                  "directory.",
-                                 source, pathD));
+                                 nodeTransferModeToString(transferMode), source, pathD));
         return false;
     }
 
