@@ -87,7 +87,12 @@ bool CommandParser::hasMoreInput()
 CommandName CommandParser::parseCommandName(const std::string_view commandStr) const
 {
     const auto cmd = std::string{commandStr};
-    return commandsMap.contains(cmd) ? commandsMap.at(cmd) : CommandName::Unknown;
+
+    if (const auto it = commandsMap.find(cmd); it != commandsMap.end())
+    {
+        return it->second;
+    }
+    return CommandName::Unknown;
 }
 
 std::vector<std::string> CommandParser::parseCommandArguments(const std::string_view      commandStr,
@@ -163,7 +168,7 @@ void CommandParser::parseCommandArgumentsByWhitespaces(std::vector<std::string>&
     {
         endPos = std::find_if(commandStr.begin() + startPos, commandStr.end(), isSpace) - commandStr.begin();
 
-        if (startPos - endPos > 0)
+        if (endPos - startPos > 0)
         {
             parsedArguments.emplace_back(commandStr.substr(startPos, endPos - startPos));
         }

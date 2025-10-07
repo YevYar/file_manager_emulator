@@ -19,7 +19,8 @@ enum class ErrorCode
     CannotOpenDataStream,   /// Batch file could not be opened.
     CommandParsingError,    /// Invalid or unknown command syntax.
     CommandArgumentsError,  /// Incorrect number or type of command arguments.
-    LogicError              /// Runtime logic error during command execution.
+    LogicError,             /// Runtime logic error during command execution.
+    UknownException         /// Some exception was thrown
 };
 
 /**
@@ -137,7 +138,7 @@ class FileManagerEmulator final
         /**
          * \brief Validates command arguments and dispatches command to the corresponding handler.
          */
-        bool        executeCommand(const Command& command);
+        ErrorCode   executeCommand(const Command& command);
         /**
          * \brief Finds a node by normalized absolute path. Returns nullptr if not found or on errors.
          */

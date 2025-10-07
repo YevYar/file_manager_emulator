@@ -25,6 +25,7 @@ FME is written in C++20.
 
 - Root directory is `/`.
 - The name of a node must be unique on the current level (one node cannot contain several children with the same name). The type of nodes isn't considered.
+- Name cannot be empty.
 - Names are case sensitive: `f` and `F` are different nodes.
 - `.` can be used in file as well as in directories name.
 - Directories can be referenced in different ways:

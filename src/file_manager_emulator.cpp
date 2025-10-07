@@ -103,11 +103,6 @@ void FileManagerEmulator::printFileTree() const
 
 ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
 {
-    if (!initCommandParser(batchFilePath))
-    {
-        return ErrorCode::CannotOpenDataStream;
-    }
-
     const auto printResultTree = [this](ErrorCode code)
     {
         if (code == ErrorCode::NoError)
@@ -122,38 +117,52 @@ ErrorCode FileManagerEmulator::run(const std::string_view batchFilePath)
         return code;
     };
 
-    while (m_parser->hasMoreInput())
+    try
     {
-        const auto command = m_parser->getNextCommand();
-
-        if (m_fileInStream.is_open() && command.name != CommandName::Unknown)
+        if (!initCommandParser(batchFilePath))
         {
-            m_logger->logInfo(std::format("Executing command [{}] ...", command.commandString));
+            return ErrorCode::CannotOpenDataStream;
         }
 
-        if (command.name == CommandName::Unknown)
+        while (m_parser->hasMoreInput())
         {
-            m_logger->logError(command.error.has_value() ? command.error.value() : "Uknown command is met.");
-            return printResultTree(ErrorCode::CommandParsingError);
-        }
-        else if (command.error.has_value())
-        {
-            m_logger->logError(command.error.value(), command.commandString);
-            return printResultTree(ErrorCode::CommandParsingError);
+            const auto command = m_parser->getNextCommand();
+
+            if (m_fileInStream.is_open() && command.name != CommandName::Unknown)
+            {
+                m_logger->logInfo(std::format("Executing command [{}] ...", command.commandString));
+            }
+
+            if (command.name == CommandName::Unknown)
+            {
+                m_logger->logError(command.error.has_value() ? command.error.value() : "Uknown command is met.");
+                return printResultTree(ErrorCode::CommandParsingError);
+            }
+            else if (command.error.has_value())
+            {
+                m_logger->logError(command.error.value(), command.commandString);
+                return printResultTree(ErrorCode::CommandParsingError);
+            }
+
+            const auto executionResultCode = executeCommand(command);
+            if (executionResultCode != ErrorCode::NoError)
+            {
+                return printResultTree(executionResultCode);
+            }
         }
 
-        if (!validateNumberOfCommandArguments(command))
-        {
-            return printResultTree(ErrorCode::CommandArgumentsError);
-        }
-
-        if (!executeCommand(command))
-        {
-            return printResultTree(ErrorCode::LogicError);
-        }
+        return printResultTree(ErrorCode::NoError);
     }
-
-    return printResultTree(ErrorCode::NoError);
+    catch (const std::exception& ex)
+    {
+        m_logger->logError(std::format("Unexpected failure - {}", ex.what()));
+        return printResultTree(ErrorCode::UknownException);
+    }
+    catch (...)
+    {
+        m_logger->logError("Unknown exception occurred.");
+        return printResultTree(ErrorCode::UknownException);
+    }
 }
 
 bool FileManagerEmulator::cp(const std::string_view source, const std::string_view destination)
@@ -225,23 +234,33 @@ bool FileManagerEmulator::rm(const std::string_view absolutePath)
     return false;
 }
 
-bool FileManagerEmulator::executeCommand(const Command& command)
+ErrorCode FileManagerEmulator::executeCommand(const Command& command)
 {
-    switch (command.name)
+    if (!validateNumberOfCommandArguments(command))
     {
-        case CommandName::Cp:
-            return cp(command.arguments[0], command.arguments[1]);
-        case CommandName::Md:
-            return md(command.arguments[0]);
-        case CommandName::Mf:
-            return mf(command.arguments[0]);
-        case CommandName::Mv:
-            return mv(command.arguments[0], command.arguments[1]);
-        case CommandName::Rm:
-            return rm(command.arguments[0]);
-        default:
-            return false;
+        return ErrorCode::CommandArgumentsError;
     }
+
+    const auto ok = [this, &command]()
+    {
+        switch (command.name)
+        {
+            case CommandName::Cp:
+                return cp(command.arguments[0], command.arguments[1]);
+            case CommandName::Md:
+                return md(command.arguments[0]);
+            case CommandName::Mf:
+                return mf(command.arguments[0]);
+            case CommandName::Mv:
+                return mv(command.arguments[0], command.arguments[1]);
+            case CommandName::Rm:
+                return rm(command.arguments[0]);
+            default:
+                return false;
+        }
+    }();
+
+    return ok ? ErrorCode::NoError : ErrorCode::LogicError;
 }
 
 FileManagerEmulator::FsNode* FileManagerEmulator::findNodeByPath(const std::string_view normalizedNodePath) const
@@ -539,6 +558,11 @@ FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(const Nod
         // Directory can have basename with '.'
         // Wrong is file "f.txt/" or "f/"
         m_logger->logError(formatInvalidFileReferenceErrorMsg(nodePath, basename));
+        return nullptr;
+    }
+    if (basename.empty())
+    {
+        m_logger->logError(formatPathErrorMsg(nodePath, "basename cannot be empty."));
         return nullptr;
     }
 
