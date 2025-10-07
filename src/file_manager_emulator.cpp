@@ -1,5 +1,6 @@
 #include "file_manager_emulator.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -177,38 +178,12 @@ bool FileManagerEmulator::cp(const std::string_view source, const std::string_vi
 
 bool FileManagerEmulator::md(const std::string_view dirAbsolutePath)
 {
-    const auto normalizedDirPath = normalizePath(dirAbsolutePath);
-    const auto nodePathInfo      = getNodePathInfo(normalizedDirPath, NodeType::Directory);
-    const auto parent            = validateNodeCreation(NodeType::Directory, nodePathInfo, normalizedDirPath, false);
-
-    if (parent)
-    {
-        auto newDir = std::unique_ptr<FsNode>{
-          new FsNode{.name = nodePathInfo.basename, .isDirectory = true, .children = {}}
-        };
-        parent->children.insert({nodePathInfo.basename, std::move(newDir)});
-        m_logger->logInfo(std::format("Directory {} is created.", normalizedDirPath));
-    }
-
-    return parent;
+    return validateAndCreateNode(NodeType::Directory, dirAbsolutePath, false);
 }
 
 bool FileManagerEmulator::mf(const std::string_view fileAbsolutePath)
 {
-    const auto normalizedFilePath = normalizePath(fileAbsolutePath);
-    const auto nodePathInfo       = getNodePathInfo(normalizedFilePath, NodeType::File);
-    const auto parent             = validateNodeCreation(NodeType::File, nodePathInfo, normalizedFilePath, true);
-
-    if (parent && !parent->children.contains(nodePathInfo.basename))
-    {
-        auto newFile = std::unique_ptr<FsNode>{
-          new FsNode{.name = nodePathInfo.basename, .isDirectory = false, .children = {}}
-        };
-        parent->children.insert({nodePathInfo.basename, std::move(newFile)});
-        m_logger->logInfo(std::format("File {} is created.", normalizedFilePath));
-    }
-
-    return parent;
+    return validateAndCreateNode(NodeType::File, fileAbsolutePath, true);
 }
 
 bool FileManagerEmulator::mv(const std::string_view source, const std::string_view destination)
@@ -554,52 +529,61 @@ bool FileManagerEmulator::transferNode(const NodeType requiredNodeType, FileMana
     return false;
 }
 
-FileManagerEmulator::FsNode* FileManagerEmulator::validateNodeCreation(const NodeType         requiredNodeType,
-                                                                       const PathInfo&        pathInfo,
-                                                                       const std::string_view nodePath,
-                                                                       const bool ignoreIfAlreadyExist) const
+bool FileManagerEmulator::validateAndCreateNode(const NodeType         requiredNodeType,
+                                                const std::string_view nodeAbsolutePath,
+                                                const bool             ignoreIfAlreadyExist)
 {
-    const auto& [path, basename, nodeType] = pathInfo;
+    const auto normalizedNodePath          = normalizePath(nodeAbsolutePath);
+    const auto& [path, basename, nodeType] = getNodePathInfo(normalizedNodePath, requiredNodeType);
 
     if (requiredNodeType == NodeType::File && nodeType == NodeType::Invalid)
     {
         // File can have basename without '.'
         // Directory can have basename with '.'
         // Wrong is file "f.txt/" or "f/"
-        m_logger->logError(formatInvalidFileReferenceErrorMsg(nodePath, basename));
-        return nullptr;
+        m_logger->logError(formatInvalidFileReferenceErrorMsg(normalizedNodePath, basename));
+        return false;
     }
     if (basename.empty())
     {
-        m_logger->logError(formatPathErrorMsg(nodePath, "basename cannot be empty."));
-        return nullptr;
+        m_logger->logError(formatPathErrorMsg(normalizedNodePath, "basename cannot be empty."));
+        return false;
     }
 
     const auto parent = findNodeByPath(path);
     if (!parent)
     {
-        return nullptr;
+        return false;
     }
     if (!parent->isDirectory)
     {
-        m_logger->logError(formatPathErrorMsg(nodePath, std::format("{} is not a directory.", parent->name)));
-        return nullptr;
+        m_logger->logError(formatPathErrorMsg(normalizedNodePath, std::format("{} is not a directory.", parent->name)));
+        return false;
     }
-    if (parent->children.contains(basename))
-    {
-        const auto nodeTypeStr = nodeTypeToString(requiredNodeType);
 
+    const auto nodeTypeStr = nodeTypeToString(requiredNodeType);
+
+    if (!parent->children.contains(basename))
+    {
+        auto newNode = std::unique_ptr<FsNode>{
+          new FsNode{.name = basename, .isDirectory = requiredNodeType == NodeType::Directory, .children = {}}
+        };
+        parent->children.insert({basename, std::move(newNode)});
+        m_logger->logInfo(std::format("The {} {} is created.", nodeTypeStr, normalizedNodePath));
+    }
+    else
+    {
         if (ignoreIfAlreadyExist)
         {
             m_logger
               ->logInfo(std::format("Ignore creation of the {} {} because the item with such a name already exists.",
-                                    nodeTypeStr, nodePath));
+                                    nodeTypeStr, normalizedNodePath));
         }
         else
         {
             m_logger->logError(std::format("Cannot create {} {}: parent directory {} already contains item {}.",
-                                           nodeTypeStr, nodePath, path, basename));
-            return nullptr;
+                                           nodeTypeStr, normalizedNodePath, path, basename));
+            return false;
         }
     }
 

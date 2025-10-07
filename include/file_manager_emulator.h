@@ -185,12 +185,12 @@ class FileManagerEmulator final
                                  const std::string& basenameS, const std::string& basenameD, std::string_view pathD,
                                  bool ignoreIfAlreadyExist, NodeTransferMode transferMode);
         /**
-         * \brief Validates node creation context and returns parent node if creation is allowed.
+         * \brief Validates and performs node creation.
          * 
          * \see transferNode() for details about parameters.
          */
-        FsNode*     validateNodeCreation(NodeType requiredNodeType, const PathInfo& pathInfo, std::string_view nodePath,
-                                         bool ignoreIfAlreadyExist) const;
+        bool        validateAndCreateNode(NodeType requiredNodeType, std::string_view nodePath,
+                                          bool ignoreIfAlreadyExist);
         /**
          * \brief Validates and performs a move/copy operation between paths.
          */
